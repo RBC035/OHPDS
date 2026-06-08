@@ -1,0 +1,942 @@
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  Linking,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
+import api from "../../../../services/api/axios";
+import { ClassService } from "../../../../services/api/classService";
+import { HomeworkService } from "../../../../services/api/homeworkService";
+import { StudentClassService } from "../../../../services/api/studentClassService";
+import { StudentTaskService } from "../../../../services/api/studentTaskService";
+
+type StudentTask = {
+  id: number;
+  homeworkId: number;
+  task: string;
+  submitDate: string;
+  studentName?: string;
+};
+
+type Homework = {
+  id: number | string;
+  subjectId: number | string;
+  classId: number | string;
+  title: string;
+  homework: string;
+  startDate: string;
+  endDate: string;
+  description?: string;
+  status?: string;
+  className?: string;
+};
+
+/* ── File type → icon + colour (PDF red · DOC blue · PPT orange) ── */
+function fileMeta(path: string) {
+  const ext = (path ?? "").split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf")
+    return {
+      icon: "document-text" as const,
+      color: "#DC2626",
+      bg: "#FEE2E2",
+      label: "PDF Document",
+    };
+  if (ext === "ppt" || ext === "pptx")
+    return {
+      icon: "easel" as const,
+      color: "#EA580C",
+      bg: "#FFF1E6",
+      label: "PowerPoint",
+    };
+  if (ext === "doc" || ext === "docx")
+    return {
+      icon: "document" as const,
+      color: "#2563EB",
+      bg: "#EEF4FF",
+      label: "Word Document",
+    };
+  return {
+    icon: "attach" as const,
+    color: "#6B7280",
+    bg: "#F3F4F6",
+    label: "File",
+  };
+}
+
+function statusStyle(status?: string) {
+  const s = (status ?? "").toLowerCase();
+  if (s === "active")
+    return { bg: "#DCFCE7", color: "#16A34A", dot: "#16A34A" };
+  if (s === "inactive")
+    return { bg: "#FEF3C7", color: "#D97706", dot: "#D97706" };
+  return { bg: "#F3F4F6", color: "#6B7280", dot: "#6B7280" };
+}
+
+function durationLabel(start?: string, end?: string): string {
+  if (!start || !end) return "—";
+  const s = new Date(start);
+  const e = new Date(end);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return "—";
+  const days = Math.round((e.getTime() - s.getTime()) / 86_400_000);
+  if (days < 0) return "—";
+  if (days === 0) return "Same day";
+  if (days === 1) return "1 day";
+  if (days < 7) return `${days} days`;
+  const weeks = Math.floor(days / 7);
+  const rem = days % 7;
+  if (rem === 0) return `${weeks} week${weeks > 1 ? "s" : ""}`;
+  return `${weeks}w ${rem}d`;
+}
+
+function prettyDate(d?: string): string {
+  if (!d) return "—";
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return d;
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/* Days remaining until end date (relative to today) */
+function remainingLabel(end?: string): {
+  text: string;
+  color: string;
+  bg: string;
+} {
+  if (!end) return { text: "No end date", color: "#6B7280", bg: "#F3F4F6" };
+  const e = new Date(end);
+  if (isNaN(e.getTime())) return { text: "—", color: "#6B7280", bg: "#F3F4F6" };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((e.getTime() - today.getTime()) / 86_400_000);
+  if (diff < 0) return { text: "Overdue", color: "#DC2626", bg: "#FEE2E2" };
+  if (diff === 0) return { text: "Due today", color: "#EA580C", bg: "#FFF1E6" };
+  if (diff === 1)
+    return { text: "1 day left", color: "#EA580C", bg: "#FFF1E6" };
+  return { text: `${diff} days left`, color: "#16A34A", bg: "#DCFCE7" };
+}
+
+export default function TeacherHomeworkDetailScreen() {
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ id: string; subject?: string }>();
+  const homeworkId = Number(params.id);
+  const subjectName = params.subject
+    ? decodeURIComponent(params.subject)
+    : "Homework";
+
+  const [hw, setHw] = useState<Homework | null>(null);
+  const [className, setClassName] = useState<string>("");
+  const [studentCount, setStudentCount] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewHeaders, setPreviewHeaders] = useState<
+    Record<string, string> | undefined
+  >(undefined);
+
+  const [tasksVisible, setTasksVisible]   = useState(false);
+  const [studentTasks, setStudentTasks]   = useState<StudentTask[]>([]);
+  const [tasksLoading, setTasksLoading]   = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await HomeworkService.getOne(homeworkId);
+      const data: Homework = res.data?.data ?? res.data ?? null;
+      setHw(data);
+
+      if (data?.classId != null) {
+        // class name
+        try {
+          if (data.className) {
+            setClassName(data.className);
+          } else {
+            const clsRes = await ClassService.getAll();
+            const list: any[] = clsRes.data?.data ?? clsRes.data ?? [];
+            const found = list.find(
+              (c) => String(c.id) === String(data.classId),
+            );
+            setClassName(found?.name ?? `Class #${data.classId}`);
+          }
+        } catch {
+          setClassName(`Class #${data.classId}`);
+        }
+        // student count
+        try {
+          const scRes = await StudentClassService.getByClass(data.classId);
+          const arr: any[] = scRes.data?.data ?? scRes.data ?? [];
+          setStudentCount(Array.isArray(arr) ? arr.length : 0);
+        } catch {
+          setStudentCount(null);
+        }
+      }
+    } catch {
+      setHw(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [homeworkId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  function resolveFileUrl(path?: string) {
+    if (!path) return null;
+    if (path.startsWith("http://") || path.startsWith("https://")) return path;
+    const base = api.defaults.baseURL ?? "";
+    try {
+      const origin = new URL(base).origin;
+      return origin + "/uploads/homework/" + path;
+    } catch {
+      return path;
+    }
+  }
+
+  function resolveTaskUrl(path?: string) {
+    if (!path) return null;
+    if (path.startsWith("http://") || path.startsWith("https://")) return path;
+    const base = api.defaults.baseURL ?? "";
+    try {
+      const origin = new URL(base).origin;
+      return origin + "/uploads/tasks/" + path;
+    } catch {
+      return path;
+    }
+  }
+
+  async function openStudentTasks() {
+    setTasksLoading(true);
+    setTasksVisible(true);
+    try {
+      const res = await StudentTaskService.getByHomework(homeworkId);
+      const raw: any[] = res.data?.data ?? res.data ?? [];
+      const mapped: StudentTask[] = raw.map((t: any) => ({
+        id:          Number(t.id),
+        homeworkId:  Number(t.homeworkId),
+        task:        t.task ?? "",
+        submitDate:  t.submitDate ?? "",
+        studentName: t.studentName ?? t.student?.name ?? undefined,
+      }));
+      setStudentTasks(mapped);
+    } catch {
+      setStudentTasks([]);
+    } finally {
+      setTasksLoading(false);
+    }
+  }
+
+  function taskFileStyle(filename: string) {
+    const ext = (filename ?? "").split(".").pop()?.toLowerCase() ?? "";
+    if (["jpg", "jpeg", "png"].includes(ext)) return { isImage: true,  icon: "image-outline"         as const, bg: "#F0FFF4", color: "#16A34A", label: ext.toUpperCase() };
+    if (ext === "pdf")                         return { isImage: false, icon: "document-text-outline"  as const, bg: "#FEE2E2", color: "#DC2626", label: "PDF"             };
+    if (ext === "doc" || ext === "docx")       return { isImage: false, icon: "document-outline"       as const, bg: "#EEF4FF", color: "#2563EB", label: ext.toUpperCase() };
+    return                                            { isImage: false, icon: "attach-outline"          as const, bg: "#F3F4F6", color: "#6B7280", label: "FILE"            };
+  }
+
+  function formatSubmitDate(d: string) {
+    if (!d) return "—";
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return d;
+    return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#1E40AF" />
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={styles.loadingText}>Loading details...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!hw) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#1E40AF" />
+        <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.loadingWrap}>
+          <Ionicons name="alert-circle-outline" size={40} color="#9CA3AF" />
+          <Text style={styles.loadingText}>Homework not found.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const fm = fileMeta(hw.homework);
+  const ss = statusStyle(hw.status);
+  const remaining = remainingLabel(hw.endDate);
+
+  return (
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+      <StatusBar barStyle="light-content" backgroundColor="#1E40AF" />
+
+      {/* ── HEADER ── */}
+      <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
+        <View style={styles.headerTop}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.headerKicker}>Homework details</Text>
+            <Text style={styles.headerSubject} numberOfLines={1}>
+              {subjectName}
+            </Text>
+          </View>
+        </View>
+      </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+      >
+        {/* ── HERO CARD ── */}
+        <TouchableOpacity
+          style={styles.heroCard}
+          activeOpacity={0.85}
+          onPress={async () => {
+            try {
+              const raw = hw.homework;
+              if (!raw) {
+                setPreviewUrl(null);
+                setPreviewVisible(true);
+                return;
+              }
+              const resolved = resolveFileUrl(raw) || raw;
+              const token = await AsyncStorage.getItem("token");
+              setPreviewHeaders(
+                token ? { Authorization: `Bearer ${token}` } : undefined,
+              );
+              // prefer direct URL (with auth headers) so private PDFs can be fetched by the WebView
+              setPreviewUrl(resolved);
+              setPreviewVisible(true);
+            } catch (e) {
+              setPreviewUrl(null);
+              setPreviewVisible(true);
+            }
+          }}
+        >
+          <View style={[styles.heroIcon, { backgroundColor: fm.bg }]}>
+            <Ionicons
+              name={`${fm.icon}-outline` as any}
+              size={34}
+              color={fm.color}
+            />
+          </View>
+          <Text style={styles.heroTitle}>{hw.title || hw.homework}</Text>
+          <View style={styles.heroBadges}>
+            <View style={[styles.fileTypeBadge, { backgroundColor: fm.bg }]}>
+              <Ionicons
+                name={`${fm.icon}-outline` as any}
+                size={12}
+                color={fm.color}
+              />
+              <Text style={[styles.fileTypeText, { color: fm.color }]}>
+                {" "}
+                {fm.label}
+              </Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: ss.bg }]}>
+              <View style={[styles.statusDot, { backgroundColor: ss.dot }]} />
+              <Text style={[styles.statusBadgeText, { color: ss.color }]}>
+                {hw.status ?? "Active"}
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* ── QUICK FACTS ── */}
+        <View style={styles.factsRow}>
+          <View style={styles.factCard}>
+            <Ionicons name="hourglass-outline" size={18} color="#2563EB" />
+            <Text style={styles.factValue}>
+              {durationLabel(hw.startDate, hw.endDate)}
+            </Text>
+            <Text style={styles.factLabel}>Duration</Text>
+          </View>
+          <View style={styles.factCard}>
+            <View style={[styles.factPill, { backgroundColor: remaining.bg }]}>
+              <Text style={[styles.factPillText, { color: remaining.color }]}>
+                {remaining.text}
+              </Text>
+            </View>
+            <Text style={[styles.factLabel, { marginTop: 8 }]}>Status</Text>
+          </View>
+        </View>
+
+        {/* ── TIMELINE ── */}
+        <Text style={styles.sectionLabel}>Timeline</Text>
+        <View style={styles.timelineCard}>
+          <View
+            style={[styles.timelineRow, { justifyContent: "space-between" }]}
+          >
+            <View
+              style={{
+                flex: 1,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <View
+                style={[styles.timelineDot, { backgroundColor: "#16A34A" }]}
+              />
+              <View>
+                <Text style={styles.timelineLabel}>Start date</Text>
+                <Text style={styles.timelineValue}>
+                  {prettyDate(hw.startDate)}
+                </Text>
+              </View>
+            </View>
+            <View style={{ width: 16 }} />
+            <View
+              style={{
+                flex: 1,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                justifyContent: "flex-end",
+              }}
+            >
+              <View
+                style={[styles.timelineDot, { backgroundColor: "#DC2626" }]}
+              />
+              <View>
+                <Text style={styles.timelineLabel}>End date</Text>
+                <Text style={styles.timelineValue}>
+                  {prettyDate(hw.endDate)}
+                </Text>
+              </View>
+              <View style={styles.durationChip}>
+                <Ionicons name="time-outline" size={12} color="#2563EB" />
+                <Text style={styles.durationChipText}>
+                  {" "}
+                  {durationLabel(hw.startDate, hw.endDate)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* ── DESCRIPTION ── */}
+        <Text style={styles.sectionLabel}>Description</Text>
+        <View style={styles.descCard}>
+          {hw.description ? (
+            <Text style={styles.descText}>{hw.description}</Text>
+          ) : (
+            <View style={styles.descEmpty}>
+              <Ionicons name="document-outline" size={20} color="#D1D5DB" />
+              <Text style={styles.descEmptyText}>No description provided.</Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── STUDENT TASKS BUTTON ── */}
+        <TouchableOpacity
+          style={styles.tasksBtn}
+          activeOpacity={0.85}
+          onPress={openStudentTasks}
+        >
+          <Ionicons name="people-outline" size={18} color="#fff" />
+          <Text style={styles.tasksBtnText}>View Student Tasks</Text>
+        </TouchableOpacity>
+
+        {/* ── ACTION ── */}
+        <TouchableOpacity
+          style={styles.editAction}
+          activeOpacity={0.85}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="create-outline" size={18} color="#fff" />
+          <Text style={styles.editActionText}>Back to list to edit</Text>
+        </TouchableOpacity>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* ── STUDENT TASKS MODAL ── */}
+      <Modal
+        visible={tasksVisible}
+        animationType="slide"
+        onRequestClose={() => setTasksVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#F0F4FF" }}>
+          {/* Header */}
+          <View style={taskModal.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={taskModal.headerTitle}>Student Tasks</Text>
+              <Text style={taskModal.headerSub} numberOfLines={1}>
+                {hw?.title ?? "Homework"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={taskModal.closeBtn}
+              onPress={() => setTasksVisible(false)}
+            >
+              <Ionicons name="close" size={18} color="#374151" />
+            </TouchableOpacity>
+          </View>
+
+          {tasksLoading ? (
+            <View style={taskModal.center}>
+              <ActivityIndicator size="large" color="#2563EB" />
+              <Text style={taskModal.centerText}>Loading tasks…</Text>
+            </View>
+          ) : studentTasks.length === 0 ? (
+            <View style={taskModal.center}>
+              <Ionicons name="documents-outline" size={40} color="#D1D5DB" />
+              <Text style={taskModal.centerText}>No tasks submitted yet</Text>
+            </View>
+          ) : (
+            <ScrollView contentContainerStyle={taskModal.scroll} showsVerticalScrollIndicator={false}>
+              <Text style={taskModal.countLabel}>
+                {studentTasks.length} submission{studentTasks.length !== 1 ? "s" : ""}
+              </Text>
+
+              {studentTasks.map((task, idx) => {
+                const fs  = taskFileStyle(task.task);
+                const url = resolveTaskUrl(task.task);
+                return (
+                  <View key={task.id} style={taskModal.card}>
+                    {/* Index badge */}
+                    <View style={taskModal.indexBadge}>
+                      <Text style={taskModal.indexText}>#{idx + 1}</Text>
+                    </View>
+
+                    {/* Image or file icon */}
+                    {fs.isImage && url ? (
+                      <Image
+                        source={{ uri: url }}
+                        style={taskModal.taskImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[taskModal.fileIconWrap, { backgroundColor: fs.bg }]}>
+                        <Ionicons name={fs.icon} size={36} color={fs.color} />
+                        <View style={[taskModal.fileBadge, { backgroundColor: fs.color }]}>
+                          <Text style={taskModal.fileBadgeText}>{fs.label}</Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Meta row */}
+                    <View style={taskModal.meta}>
+                      <View style={taskModal.metaLeft}>
+                        {task.studentName ? (
+                          <Text style={taskModal.studentName}>{task.studentName}</Text>
+                        ) : null}
+                        <View style={taskModal.dateRow}>
+                          <Ionicons name="calendar-outline" size={12} color="#6B7280" />
+                          <Text style={taskModal.dateText}>
+                            Submitted: {formatSubmitDate(task.submitDate)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {url && (
+                        <TouchableOpacity
+                          style={[taskModal.openBtn, { backgroundColor: fs.bg }]}
+                          activeOpacity={0.8}
+                          onPress={() => Linking.openURL(url).catch(() => {})}
+                        >
+                          <Ionicons name="open-outline" size={15} color={fs.color} />
+                          <Text style={[taskModal.openBtnText, { color: fs.color }]}>Open</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={previewVisible}
+        animationType="slide"
+        onRequestClose={() => setPreviewVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+          <View
+            style={{
+              height: 56,
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 12,
+              borderBottomWidth: 1,
+              borderBottomColor: "#E5E7EB",
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => setPreviewVisible(false)}
+              style={{ padding: 8 }}
+            >
+              <Ionicons name="close-outline" size={24} color="#111827" />
+            </TouchableOpacity>
+            <Text
+              style={{
+                fontWeight: "700",
+                marginLeft: 8,
+                fontSize: 16,
+                flex: 1,
+              }}
+              numberOfLines={1}
+            >
+              {hw.title || hw.homework}
+            </Text>
+          </View>
+          {previewUrl ? (
+            <WebView
+              source={
+                previewHeaders
+                  ? { uri: previewUrl, headers: previewHeaders }
+                  : { uri: previewUrl }
+              }
+              style={{ flex: 1 }}
+              startInLoadingState
+              renderLoading={() => (
+                <ActivityIndicator
+                  style={{ flex: 1 }}
+                  size="large"
+                  color="#2563EB"
+                />
+              )}
+            />
+          ) : (
+            <View
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text>No preview available</Text>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#F0F4FF" },
+
+  header: {
+    backgroundColor: "#1E40AF",
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
+  },
+  headerTop: { flexDirection: "row", alignItems: "center" },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerKicker: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.65)",
+    fontWeight: "600",
+  },
+  headerSubject: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#fff",
+    marginTop: 1,
+  },
+
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  loadingText: { fontSize: 14, color: "#6B7280" },
+
+  scroll: { paddingHorizontal: 16, paddingTop: 16 },
+
+  /* Hero */
+  heroCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 22,
+    alignItems: "center",
+    marginBottom: 14,
+    marginTop: -8,
+    shadowColor: "#1E3A8A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  heroIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  heroTitle: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 12,
+    lineHeight: 26,
+  },
+  heroBadges: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+  fileTypeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  fileTypeText: { fontSize: 11, fontWeight: "700" },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusBadgeText: { fontSize: 11, fontWeight: "700" },
+
+  /* Quick facts */
+  factsRow: { flexDirection: "row", gap: 12, marginBottom: 6 },
+  factCard: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#EEF2FF",
+  },
+  factValue: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+    marginTop: 6,
+  },
+  factLabel: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  factPill: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginTop: 2,
+  },
+  factPillText: { fontSize: 13, fontWeight: "800" },
+
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginTop: 18,
+    marginBottom: 10,
+  },
+
+  /* Info card */
+  infoCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#EEF2FF",
+  },
+  infoIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#EEF4FF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  infoTitle: { fontSize: 15, fontWeight: "800", color: "#111827" },
+  infoMetaRow: { flexDirection: "row", alignItems: "center", marginTop: 3 },
+  infoMeta: { fontSize: 12, color: "#6B7280" },
+
+  /* Timeline */
+  timelineCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#EEF2FF",
+  },
+  timelineRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  timelineDot: { width: 12, height: 12, borderRadius: 6 },
+  timelineConnector: {
+    width: 2,
+    height: 22,
+    backgroundColor: "#E5E7EB",
+    marginLeft: 5,
+    marginVertical: 2,
+  },
+  timelineLabel: { fontSize: 11, color: "#9CA3AF", fontWeight: "600" },
+  timelineValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  durationChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EEF4FF",
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  durationChipText: { fontSize: 11, fontWeight: "700", color: "#2563EB" },
+
+  /* Description */
+  descCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#EEF2FF",
+  },
+  descText: { fontSize: 14, color: "#374151", lineHeight: 22 },
+  descEmpty: { alignItems: "center", paddingVertical: 8, gap: 6 },
+  descEmptyText: { fontSize: 13, color: "#9CA3AF" },
+
+  /* Student tasks button */
+  tasksBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, backgroundColor: "#7C3AED",
+    borderRadius: 14, paddingVertical: 15, marginTop: 22,
+  },
+  tasksBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+
+  /* Action */
+  editAction: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, backgroundColor: "#2563EB",
+    borderRadius: 14, paddingVertical: 15, marginTop: 12,
+  },
+  editActionText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+});
+
+const taskModal = StyleSheet.create({
+  header: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1, borderBottomColor: "#E5E7EB",
+    gap: 12,
+  },
+  headerTitle: { fontSize: 17, fontWeight: "800", color: "#111827" },
+  headerSub:   { fontSize: 11, color: "#6B7280", marginTop: 1 },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center",
+  },
+
+  center:     { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  centerText: { fontSize: 14, color: "#9CA3AF" },
+
+  scroll:     { paddingHorizontal: 16, paddingTop: 14 },
+  countLabel: {
+    fontSize: 11, fontWeight: "700", color: "#6B7280",
+    textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12,
+  },
+
+  card: {
+    backgroundColor: "#fff", borderRadius: 16,
+    borderWidth: 1, borderColor: "#E5E7EB",
+    marginBottom: 14, overflow: "hidden",
+    elevation: 2, shadowColor: "#000",
+    shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6,
+  },
+  indexBadge: {
+    position: "absolute", top: 10, left: 10, zIndex: 2,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+  },
+  indexText: { fontSize: 11, fontWeight: "800", color: "#fff" },
+
+  taskImage: { width: "100%", height: 200 },
+
+  fileIconWrap: {
+    width: "100%", height: 140,
+    alignItems: "center", justifyContent: "center", gap: 10,
+  },
+  fileBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
+  fileBadgeText: { fontSize: 11, fontWeight: "800", color: "#fff" },
+
+  meta: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: "#F3F4F6",
+    gap: 10,
+  },
+  metaLeft:    { flex: 1, gap: 3 },
+  studentName: { fontSize: 13, fontWeight: "700", color: "#111827" },
+  dateRow:     { flexDirection: "row", alignItems: "center", gap: 5 },
+  dateText:    { fontSize: 12, color: "#6B7280" },
+
+  openBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
+  },
+  openBtnText: { fontSize: 12, fontWeight: "700" },
+});

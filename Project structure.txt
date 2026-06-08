@@ -1,0 +1,142 @@
+
+Project stucture for OHPDS 
+
+ps for mail => School@2026
+
+school-management-app/
+│
+├── app/                         # Expo Router
+│
+│   ├── (auth)/                  # Authentication flow
+│   │   ├── login.tsx
+│   │   ├── register.tsx
+│   │   ├── forgot-password.tsx
+│   │   ├── otp-verification.tsx
+│   │   └── reset-password.tsx
+│   │
+│   ├── (admin)/                 # Admin dashboard
+│   │   ├── dashboard.tsx
+│   │   ├── teachers/
+│   │   ├── students/
+│   │   ├── classes/
+│   │   ├── subjects/
+│   │   ├── assignments/
+│   │   ├── reports/
+            comments/
+│   │   ├── homework/
+│   │   └── settings.tsx
+│   │
+│   ├── (teacher)/               # Teacher dashboard
+│   │   ├── dashboard.tsx
+│   │   ├── assignments/
+│   │   ├── homework/
+            comments/
+│   │   ├── students/
+│   │   └── profile.tsx
+│   │
+│   ├── (parent)/                # Parent dashboard
+│   │   ├── dashboard.tsx
+│   │   ├── children/
+│   │   ├── homework/
+│   │   ├── assignments/
+│   │   ├── comments/
+│   │   └── profile.tsx
+│   │
+│   ├── notifications/
+│   ├── chat/
+│   ├── profile/
+│   ├── settings/
+│   │
+│   ├── _layout.tsx
+│   └── index.tsx
+│
+├── assets/
+│   ├── fonts/
+│   ├── icons/
+│   ├── images/
+│   ├── animations/
+│   └── illustrations/
+│
+├── components/
+│
+│   ├── ui/                      # Reusable UI components
+│   │   ├── Button/
+│   │   ├── Input/
+│   │   ├── Card/
+│   │   ├── Modal/
+│   │   ├── Avatar/
+│   │   ├── Badge/
+│   │   ├── Loader/
+│   │   └── EmptyState/
+│   │
+│   ├── charts/
+│   ├── dashboard/
+│   ├── forms/
+│   ├── tables/
+│   ├── navigation/
+│   └── common/
+│
+├── constants/
+│   ├── colors.ts
+│   ├── typography.ts
+│   ├── spacing.ts
+│   ├── theme.ts
+│   ├── routes.ts
+│   └── config.ts
+│
+├── hooks/
+│   ├── useAuth.ts
+│   ├── useTheme.ts
+│   ├── useApi.ts
+│   ├── useNotifications.ts
+│   └── useStorage.ts
+│
+├── services/
+│   ├── api/
+│   │   ├── axios.ts
+│   │   ├── auth.api.ts
+│   │   ├── student.api.ts
+│   │   ├── teacher.api.ts
+│   │   ├── parent.api.ts
+│   │   └── assignment.api.ts
+│   │
+│   ├── firebase/
+│   ├── notifications/
+│   └── storage/
+│
+├── store/                       # Zustand or Redux
+│   ├── authStore.ts
+│   ├── appStore.ts
+│   ├── studentStore.ts
+│   └── notificationStore.ts
+│
+├── types/
+│   ├── auth.ts
+│   ├── user.ts
+│   ├── student.ts
+│   ├── assignment.ts
+│   └── api.ts
+│
+├── utils/
+│   ├── validators.ts
+│   ├── formatters.ts
+│   ├── permissions.ts
+│   ├── date.ts
+│   └── helpers.ts
+│
+├── styles/
+│   ├── global.ts
+│   ├── shadows.ts
+│   ├── radius.ts
+│   └── animations.ts
+│
+├── localization/
+│   ├── en.json
+│   ├── sw.json
+│   └── index.ts
+│
+├── .env
+├── app.json
+├── package.json
+├── tsconfig.json
+└── README.md
