@@ -254,12 +254,7 @@ export default function AdminClassesScreen() {
             const ss     = getStatusStyle(cls.status);
 
             return (
-              <TouchableOpacity
-                key={cls.id}
-                style={styles.card}
-                activeOpacity={0.85}
-                onPress={() => router.push(`/(admin)/classes/${cls.id}` as any)}
-              >
+              <View key={cls.id} style={styles.card}>
                 <View style={[styles.colorBar, { backgroundColor: sc.color }]} />
 
                 <View style={styles.cardInner}>
@@ -284,7 +279,7 @@ export default function AdminClassesScreen() {
                       <View style={styles.cardActions}>
                         <TouchableOpacity
                           style={styles.actionEdit}
-                          onPress={(e) => { e.stopPropagation(); openEdit(cls); }}
+                          onPress={() => openEdit(cls)}
                           activeOpacity={0.75}
                         >
                           <Ionicons name="create-outline" size={15} color="#2563EB" />
@@ -293,7 +288,7 @@ export default function AdminClassesScreen() {
 
                         <TouchableOpacity
                           style={styles.actionDelete}
-                          onPress={(e) => { e.stopPropagation(); handleDelete(cls); }}
+                          onPress={() => handleDelete(cls)}
                           activeOpacity={0.75}
                         >
                           <Ionicons name="trash-outline" size={15} color="#DC2626" />
@@ -301,10 +296,8 @@ export default function AdminClassesScreen() {
                       </View>
                     </View>
                   </View>
-
-                  <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })}
 

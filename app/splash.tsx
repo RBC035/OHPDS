@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 import { router } from "expo-router";
+import React from "react";
 
 export default function SplashScreen() {
   const fade = new Animated.Value(0);

@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 
 import { ClassService } from "@/services/api/classService";
+import { StudentService } from "@/services/api/studentService";
 
 type Student = { id: string; name: string; rollNo: string; gender: "M" | "F" };
 type Subject = { id: string; name: string; teacher: string };
@@ -40,6 +41,8 @@ const STATUS_STYLES: Record<string, { bg: string; color: string; label: string }
   active:   { bg: "#DCFCE7", color: "#16A34A", label: "Active"   },
   inactive: { bg: "#FEE2E2", color: "#DC2626", label: "Inactive" },
 };
+
+const STATUS_KEYS = ["active", "inactive"];
 
 function getStream(name: string) {
   return name.trim().split(" ").pop()?.toUpperCase() ?? "A";
@@ -74,13 +77,34 @@ function extractItem(res: any): any {
   return d ?? {};
 }
 
-function mapStudent(item: any): Student {
-  return {
-    id:     String(item.id),
-    name:   item.name ?? item.student_name ?? "",
-    rollNo: item.roll_no ?? item.rollNo ?? item.roll_number ?? "",
-    gender: item.gender === "F" || item.gender === "female" ? "F" : "M",
-  };
+// `GET /classes/{id}/students` only returns student_class link rows
+// (id, stuentId, classId, studyYear) — no name/gender. Those live on the
+// student table, so each link has to be joined with StudentService.getOne.
+async function joinStudents(rawLinks: any[]): Promise<Student[]> {
+  const links = rawLinks.map((item) => ({
+    linkId:    String(item.id),
+    studentId: item.stuentId ?? item.studentId ?? item.student_id ?? null,
+    rollNo:    item.roll_no ?? item.rollNo ?? item.roll_number ?? "",
+  }));
+
+  const details = await Promise.allSettled(
+    links.map((l) =>
+      l.studentId != null
+        ? StudentService.getOne(Number(l.studentId))
+        : Promise.reject(new Error("missing studentId"))
+    )
+  );
+
+  return links.map((l, idx) => {
+    const d = details[idx];
+    const raw = d.status === "fulfilled" ? extractItem(d.value) : {};
+    return {
+      id:     l.linkId,
+      name:   raw.name ?? "",
+      rollNo: l.rollNo,
+      gender: raw.gender === "F" || raw.gender === "female" ? "F" : "M",
+    };
+  });
 }
 
 function mapSubject(item: any): Subject {
@@ -107,6 +131,13 @@ export default function AdminClassDetailScreen() {
   const [search, setSearch]             = useState("");
   const [modalVisible, setModalVisible] = useState(false);
 
+  // class details / edit
+  const [classModalVisible, setClassModalVisible] = useState(false);
+  const [classDetailsVisible, setClassDetailsVisible] = useState(false);
+  const [savingClass, setSavingClass]   = useState(false);
+  const [classFormName, setClassFormName]     = useState("");
+  const [classFormStatus, setClassFormStatus] = useState("active");
+
   // student form
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [formName, setFormName]             = useState("");
@@ -123,20 +154,27 @@ export default function AdminClassDetailScreen() {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const [classRes, studentsRes, subjectsRes] = await Promise.all([
+      // Use allSettled so one broken endpoint (e.g. subjects-by-class,
+      // which this backend doesn't expose) can't wipe out the whole screen.
+      const [classRes, studentsRes, subjectsRes] = await Promise.allSettled([
         ClassService.getOne(id),
         ClassService.getStudents(id),
         ClassService.getSubjects(id),
       ]);
 
-      const raw = extractItem(classRes);
-      setClassInfo({
-        id:        String(raw.id ?? id),
-        className: raw.class_name ?? raw.name ?? "",
-        status:    raw.status ?? "active",
-      });
-      setStudents(extractList(studentsRes).map(mapStudent));
-      setSubjects(extractList(subjectsRes).map(mapSubject));
+      if (classRes.status === "fulfilled") {
+        const raw = extractItem(classRes.value);
+        setClassInfo({
+          id:        String(raw.id ?? id),
+          className: raw.class_name ?? raw.name ?? "",
+          status:    raw.status ?? "active",
+        });
+      } else {
+        setClassInfo(null);
+      }
+
+      setStudents(studentsRes.status === "fulfilled" ? await joinStudents(extractList(studentsRes.value)) : []);
+      setSubjects(subjectsRes.status === "fulfilled" ? extractList(subjectsRes.value).map(mapSubject) : []);
     } catch (err: any) {
       Alert.alert("Error", err?.response?.data?.message ?? "Failed to load class details.");
     } finally {
@@ -146,6 +184,33 @@ export default function AdminClassDetailScreen() {
   }, [id]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // ── Class details / edit handlers ──────────────────
+  function openClassDetails() {
+    setClassDetailsVisible(true);
+  }
+
+  function openEditClass() {
+    if (!classInfo) return;
+    setClassFormName(classInfo.className);
+    setClassFormStatus(classInfo.status ?? "active");
+    setClassDetailsVisible(false);
+    setClassModalVisible(true);
+  }
+
+  async function saveClass() {
+    if (!classFormName.trim()) { Alert.alert("Required", "Enter class name."); return; }
+    setSavingClass(true);
+    try {
+      await ClassService.update(id, { name: classFormName.trim(), status: classFormStatus });
+      setClassModalVisible(false);
+      await fetchAll();
+    } catch (err: any) {
+      Alert.alert("Error", err?.response?.data?.message ?? "Failed to update class.");
+    } finally {
+      setSavingClass(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -164,9 +229,14 @@ export default function AdminClassDetailScreen() {
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={40} color="#DC2626" />
           <Text style={styles.errorText}>Class not found</Text>
-          <TouchableOpacity onPress={() => router.back()} style={styles.errorBtn}>
-            <Text style={styles.errorBtnText}>Go back</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity onPress={() => fetchAll()} style={styles.errorBtn}>
+              <Text style={styles.errorBtnText}>Retry</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.back()} style={styles.errorBtn}>
+              <Text style={styles.errorBtnText}>Go back</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -214,7 +284,7 @@ export default function AdminClassDetailScreen() {
       }
       setModalVisible(false);
       const res = await ClassService.getStudents(id);
-      setStudents(extractList(res).map(mapStudent));
+      setStudents(await joinStudents(extractList(res)));
     } catch (err: any) {
       Alert.alert("Error", err?.response?.data?.message ?? "Failed to save student.");
     } finally {
@@ -232,7 +302,7 @@ export default function AdminClassDetailScreen() {
           try {
             await ClassService.removeStudent(id, st.id);
             const res = await ClassService.getStudents(id);
-            setStudents(extractList(res).map(mapStudent));
+            setStudents(await joinStudents(extractList(res)));
           } catch (err: any) {
             Alert.alert("Error", err?.response?.data?.message ?? "Failed to remove student.");
           }
@@ -310,13 +380,24 @@ export default function AdminClassDetailScreen() {
           <View style={[styles.streamBadge, { backgroundColor: sc.color + "33" }]}>
             <Text style={styles.streamBadgeText}>{stream}</Text>
           </View>
-          <View style={{ flex: 1, marginLeft: 10 }}>
+          <TouchableOpacity
+            style={{ flex: 1, marginLeft: 10 }}
+            onPress={openClassDetails}
+            activeOpacity={0.8}
+          >
             <Text style={styles.headerTitle}>{classInfo.className}</Text>
             <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg + "55" }]}>
               <View style={[styles.statusDot, { backgroundColor: statusStyle.color }]} />
               <Text style={[styles.statusText, { color: statusStyle.color }]}>{statusStyle.label}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.infoBtn}
+            onPress={openClassDetails}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="information-circle-outline" size={22} color="#fff" />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.addBtn}
             onPress={isStudentTab ? openAddStudent : openAddSubject}
@@ -605,6 +686,144 @@ export default function AdminClassDetailScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* ── CLASS DETAILS MODAL ── */}
+      <Modal
+        visible={classDetailsVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setClassDetailsVisible(false)}
+      >
+        <View style={styles.overlay}>
+          <TouchableOpacity style={styles.overlayBg} activeOpacity={1} onPress={() => setClassDetailsVisible(false)} />
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+            <View style={styles.handle} />
+            <View style={styles.sheetHeader}>
+              <View>
+                <Text style={styles.sheetTitle}>Class details</Text>
+                <Text style={styles.sheetSub}>#{classInfo.id}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setClassDetailsVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.detailRow}>
+              <View style={[styles.detailIcon, { backgroundColor: sc.bg }]}>
+                <Ionicons name="school-outline" size={18} color={sc.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailLabel}>Class name</Text>
+                <Text style={styles.detailValue}>{classInfo.className}</Text>
+              </View>
+            </View>
+
+            <View style={styles.detailRow}>
+              <View style={[styles.detailIcon, { backgroundColor: statusStyle.bg }]}>
+                <Ionicons name="checkmark-circle-outline" size={18} color={statusStyle.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailLabel}>Status</Text>
+                <Text style={[styles.detailValue, { color: statusStyle.color }]}>{statusStyle.label}</Text>
+              </View>
+            </View>
+
+            <View style={styles.detailRow}>
+              <View style={[styles.detailIcon, { backgroundColor: "#EEF4FF" }]}>
+                <Ionicons name="people-outline" size={18} color="#2563EB" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailLabel}>Students</Text>
+                <Text style={styles.detailValue}>{students.length} ({maleCount} male · {femaleCount} female)</Text>
+              </View>
+            </View>
+
+            <View style={styles.detailRow}>
+              <View style={[styles.detailIcon, { backgroundColor: "#EDE9FE" }]}>
+                <Ionicons name="library-outline" size={18} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailLabel}>Subjects</Text>
+                <Text style={styles.detailValue}>{subjects.length}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.saveBtn} onPress={openEditClass} activeOpacity={0.85}>
+              <Ionicons name="create-outline" size={18} color="#fff" />
+              <Text style={styles.saveBtnText}>Edit class</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── EDIT CLASS MODAL ── */}
+      <Modal
+        visible={classModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setClassModalVisible(false)}
+      >
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <TouchableOpacity style={styles.overlayBg} activeOpacity={1} onPress={() => setClassModalVisible(false)} />
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+            <View style={styles.handle} />
+            <View style={styles.sheetHeader}>
+              <View>
+                <Text style={styles.sheetTitle}>Edit class</Text>
+                <Text style={styles.sheetSub}>#{classInfo.id}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setClassModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Class name <Text style={styles.required}>*</Text></Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Form One A, Form Two B..."
+              placeholderTextColor="#9CA3AF"
+              value={classFormName}
+              onChangeText={setClassFormName}
+              autoCapitalize="words"
+            />
+
+            <Text style={styles.label}>Status</Text>
+            <View style={styles.genderRow}>
+              {STATUS_KEYS.map((opt) => {
+                const s = STATUS_STYLES[opt];
+                const active = classFormStatus === opt;
+                return (
+                  <TouchableOpacity
+                    key={opt}
+                    style={[styles.statusOption, active && { backgroundColor: s.bg, borderColor: s.color }]}
+                    onPress={() => setClassFormStatus(opt)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.statusDot, { backgroundColor: active ? s.color : "#D1D5DB" }]} />
+                    <Text style={[styles.statusOptionText, { color: active ? s.color : "#6B7280" }]}>{s.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.saveBtn, savingClass && { opacity: 0.7 }]}
+              onPress={saveClass}
+              disabled={savingClass}
+              activeOpacity={0.85}
+            >
+              {savingClass ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                  <Text style={styles.saveBtnText}>Save changes</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -626,6 +845,7 @@ const styles = StyleSheet.create({
   streamBadgeText: { fontSize: 16, fontWeight: "800", color: "#fff" },
   headerTitle:  { fontSize: 18, fontWeight: "800", color: "#fff" },
   addBtn:       { width: 38, height: 38, borderRadius: 19, backgroundColor: "#fff", justifyContent: "center", alignItems: "center" },
+  infoBtn:      { width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(255,255,255,0.18)", justifyContent: "center", alignItems: "center", marginRight: 8 },
   statusBadge:  { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, marginTop: 3 },
   statusDot:    { width: 6, height: 6, borderRadius: 3 },
   statusText:   { fontSize: 11, fontWeight: "700" },
@@ -710,6 +930,21 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 14, color: "#111827", marginBottom: 18,
   },
+
+  detailRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F3F4F6",
+  },
+  detailIcon:  { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+  detailLabel: { fontSize: 11, color: "#9CA3AF", fontWeight: "600", marginBottom: 2 },
+  detailValue: { fontSize: 14, color: "#111827", fontWeight: "700" },
+
+  statusOption: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+  },
+  statusOptionText: { fontSize: 13, fontWeight: "600" },
 
   genderRow:          { flexDirection: "row", gap: 10, marginBottom: 20 },
   genderOption:       { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5, borderColor: "#E5E7EB" },

@@ -247,12 +247,7 @@ export default function AdminSubjectsScreen() {
             const ss    = getStatusStyle(sub.status);
 
             return (
-              <TouchableOpacity
-                key={sub.id}
-                style={styles.card}
-                activeOpacity={0.85}
-                onPress={() => router.push(`/(admin)/subjects/${sub.id}` as any)}
-              >
+              <View key={sub.id} style={styles.card}>
                 <View style={[styles.colorBar, { backgroundColor: badge.color }]} />
 
                 <View style={styles.cardInner}>
@@ -277,7 +272,7 @@ export default function AdminSubjectsScreen() {
                       <View style={styles.cardActions}>
                         <TouchableOpacity
                           style={styles.actionEdit}
-                          onPress={(e) => { e.stopPropagation(); openEdit(sub); }}
+                          onPress={() => openEdit(sub)}
                           activeOpacity={0.75}
                         >
                           <Ionicons name="create-outline" size={15} color="#7C3AED" />
@@ -285,7 +280,7 @@ export default function AdminSubjectsScreen() {
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.actionDelete}
-                          onPress={(e) => { e.stopPropagation(); handleDelete(sub); }}
+                          onPress={() => handleDelete(sub)}
                           activeOpacity={0.75}
                         >
                           <Ionicons name="trash-outline" size={15} color="#DC2626" />
@@ -293,10 +288,8 @@ export default function AdminSubjectsScreen() {
                       </View>
                     </View>
                   </View>
-
-                  <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })}
 

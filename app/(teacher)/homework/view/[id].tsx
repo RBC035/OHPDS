@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   Image,
   Modal,
   ScrollView,
@@ -153,6 +154,10 @@ export default function TeacherHomeworkDetailScreen() {
   const [tasksVisible, setTasksVisible] = useState(false);
   const [studentTasks, setStudentTasks] = useState<StudentTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [imageViewerUrl, setImageViewerUrl] = useState<string | null>(null);
+  const [imageViewerLabel, setImageViewerLabel] = useState<string>("");
 
   const load = useCallback(async () => {
     try {
@@ -573,11 +578,26 @@ export default function TeacherHomeworkDetailScreen() {
 
                     {/* Image or file icon */}
                     {fs.isImage && url ? (
-                      <Image
-                        source={{ uri: url }}
-                        style={taskModal.taskImage}
-                        resizeMode="cover"
-                      />
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => {
+                          setImageViewerUrl(url);
+                          setImageViewerLabel(
+                            task.studentName ?? friendlyName(task.task, "Task", task.id),
+                          );
+                          setImageViewerVisible(true);
+                        }}
+                      >
+                        <Image
+                          source={{ uri: url }}
+                          style={taskModal.taskImage}
+                          resizeMode="cover"
+                        />
+                        <View style={taskModal.zoomHint}>
+                          <Ionicons name="expand-outline" size={14} color="#fff" />
+                          <Text style={taskModal.zoomHintText}>Tap to zoom</Text>
+                        </View>
+                      </TouchableOpacity>
                     ) : (
                       <View
                         style={[
@@ -676,6 +696,52 @@ export default function TeacherHomeworkDetailScreen() {
             </ScrollView>
           )}
         </SafeAreaView>
+      </Modal>
+
+      {/* ── ZOOMABLE IMAGE VIEWER ── */}
+      <Modal
+        visible={imageViewerVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setImageViewerVisible(false)}
+      >
+        <View style={imageViewer.backdrop}>
+          <View style={[imageViewer.topBar, { paddingTop: insets.top + 10 }]}>
+            <Text style={imageViewer.label} numberOfLines={1}>
+              {imageViewerLabel}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setImageViewerVisible(false)}
+              style={imageViewer.closeBtn}
+            >
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {imageViewerUrl ? (
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={imageViewer.scrollContent}
+              maximumZoomScale={5}
+              minimumZoomScale={1}
+              centerContent
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+            >
+              <Image
+                source={{ uri: imageViewerUrl }}
+                style={imageViewer.image}
+                resizeMode="contain"
+              />
+            </ScrollView>
+          ) : (
+            <View style={imageViewer.scrollContent}>
+              <Text style={{ color: "#fff" }}>No image available</Text>
+            </View>
+          )}
+
+          <Text style={imageViewer.hint}>Pinch to zoom · Drag to pan</Text>
+        </View>
       </Modal>
 
       <Modal
@@ -1040,6 +1106,19 @@ const taskModal = StyleSheet.create({
   indexText: { fontSize: 11, fontWeight: "800", color: "#fff" },
 
   taskImage: { width: "100%", height: 200 },
+  zoomHint: {
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  zoomHintText: { fontSize: 10, fontWeight: "700", color: "#fff" },
 
   fileIconWrap: {
     width: "100%",
@@ -1074,4 +1153,44 @@ const taskModal = StyleSheet.create({
     borderRadius: 10,
   },
   openBtnText: { fontSize: 12, fontWeight: "700" },
+});
+
+const SCREEN = Dimensions.get("window");
+
+const imageViewer = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: "#000" },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 12,
+    zIndex: 2,
+  },
+  label: { flex: 1, color: "#fff", fontSize: 14, fontWeight: "700" },
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  image: {
+    width: SCREEN.width,
+    height: SCREEN.height * 0.75,
+  },
+  hint: {
+    position: "absolute",
+    bottom: 24,
+    alignSelf: "center",
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
 });
