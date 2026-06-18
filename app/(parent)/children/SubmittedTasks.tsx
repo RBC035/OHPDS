@@ -30,13 +30,8 @@ type ImageAsset = { uri: string; name: string; type: string };
 function resolveImageUrl(path?: string): string | null {
   if (!path) return null;
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  const base = api.defaults.baseURL ?? "";
-  try {
-    const origin = new URL(base).origin;
-    return `${origin}/uploads/tasks/${path}`;
-  } catch {
-    return path;
-  }
+  const base = (api.defaults.baseURL ?? "").replace(/\/$/, "");
+  return `${base}/uploads/tasks/${path}`;
 }
 
 function formatDate(d: string) {

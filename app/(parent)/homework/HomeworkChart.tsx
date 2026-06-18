@@ -366,3 +366,5 @@ const lr = StyleSheet.create({
   badge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { fontSize: 12, fontWeight: "700" },
 });
+
+export default HomeworkChart;

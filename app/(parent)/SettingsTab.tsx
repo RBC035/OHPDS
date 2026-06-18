@@ -420,6 +420,8 @@ export function SettingsTab() {
   );
 }
 
+export default SettingsTab;
+
 const styles = StyleSheet.create({
   scroll: { paddingBottom: 20 },
   body:   { paddingHorizontal: 20 },

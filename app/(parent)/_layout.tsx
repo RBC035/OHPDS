@@ -14,7 +14,6 @@ export default function ParentLayout() {
       <Tabs.Screen name="dashboard" />
 
       {/* ── HIDDEN — every file that must NOT appear as a tab ── */}
-      <Tabs.Screen name="index"                        options={{ href: null }} />
       <Tabs.Screen name="HomeTab"                      options={{ href: null }} />
       <Tabs.Screen name="SettingsTab"                  options={{ href: null }} />
       <Tabs.Screen name="TabBar"                       options={{ href: null }} />

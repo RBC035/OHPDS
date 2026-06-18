@@ -8,12 +8,14 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
-  Linking,
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
 import { Colors } from "@/constants";
 import { StudentTaskService } from "@/services/api/studentTaskService";
 import api from "@/services/api/axios";
@@ -69,13 +71,8 @@ function daysFromNow(endDate: string) {
 function resolveFileUrl(path?: string): string | null {
   if (!path) return null;
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  const base = api.defaults.baseURL ?? "";
-  try {
-    const origin = new URL(base).origin;
-    return `${origin}/uploads/homework/${path}`;
-  } catch {
-    return path;
-  }
+  const base = (api.defaults.baseURL ?? "").replace(/\/$/, "");
+  return `${base}/uploads/homework/${path}`;
 }
 
 function fileIcon(name: string): keyof typeof Ionicons.glyphMap {
@@ -84,6 +81,11 @@ function fileIcon(name: string): keyof typeof Ionicons.glyphMap {
   if (ext === "ppt" || ext === "pptx")   return "easel-outline";
   if (ext === "doc" || ext === "docx")   return "document-outline";
   return "attach-outline";
+}
+
+function friendlyHomeworkName(raw: string, id: string | number): string {
+  const ext = (raw ?? "").split(".").pop()?.toLowerCase() ?? "";
+  return ext ? `Homework_${id}.${ext}` : `Homework_${id}`;
 }
 
 function fileLabel(name: string) {
@@ -113,9 +115,12 @@ export default function HomeworkDetail() {
     studyYear:   string;
   }>();
 
-  const [submitVisible, setSubmitVisible] = useState(false);
-  const [taskImage, setTaskImage]         = useState<ImageAsset | null>(null);
-  const [submitting, setSubmitting]       = useState(false);
+  const [submitVisible, setSubmitVisible]   = useState(false);
+  const [taskImage, setTaskImage]           = useState<ImageAsset | null>(null);
+  const [submitting, setSubmitting]         = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewUrl, setPreviewUrl]         = useState<string | null>(null);
+  const [previewHeaders, setPreviewHeaders] = useState<Record<string, string> | undefined>(undefined);
 
   const overdueBool    = isDue(endDate ?? "") && status !== "completed";
   const statusKey      = overdueBool ? "pending" : (status ?? "active").toLowerCase();
@@ -136,17 +141,22 @@ export default function HomeworkDetail() {
   })();
 
   async function openFile() {
-    const url = resolveFileUrl(homework);
-    if (!url) return;
     try {
-      const ok = await Linking.canOpenURL(url);
-      if (ok) {
-        await Linking.openURL(url);
+      const url = resolveFileUrl(homework);
+      if (!url) { setPreviewUrl(null); setPreviewVisible(true); return; }
+      const ext = (homework ?? "").split(".").pop()?.toLowerCase() ?? "";
+      if (["pdf", "doc", "docx", "ppt", "pptx"].includes(ext)) {
+        setPreviewHeaders(undefined);
+        setPreviewUrl(`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`);
       } else {
-        Alert.alert("Cannot open", "No app found on this device to open this file type. Please install a PDF or Office viewer.");
+        const token = await AsyncStorage.getItem("token");
+        setPreviewHeaders(token ? { Authorization: `Bearer ${token}` } : undefined);
+        setPreviewUrl(url);
       }
+      setPreviewVisible(true);
     } catch {
-      Alert.alert("Error", "Failed to open the file.");
+      setPreviewUrl(null);
+      setPreviewVisible(true);
     }
   }
 
@@ -253,13 +263,16 @@ export default function HomeworkDetail() {
                 <Ionicons name={fileIcon(homework)} size={24} color={fileMeta!.color} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.fileName} numberOfLines={1}>{homework}</Text>
+                <Text style={styles.fileName} numberOfLines={1}>
+                  {title ?? friendlyHomeworkName(homework, homeworkId)}
+                </Text>
                 <Text style={[styles.fileType, { color: fileMeta!.color }]}>
-                  {fileMeta!.label} · Tap to open with device app
+                  {fileMeta!.label}
                 </Text>
               </View>
-              <View style={[styles.openBtn, { backgroundColor: fileMeta!.bg }]}>
-                <Ionicons name="open-outline" size={16} color={fileMeta!.color} />
+              <View style={[styles.previewBtn, { backgroundColor: fileMeta!.bg }]}>
+                <Ionicons name="eye-outline" size={14} color={fileMeta!.color} />
+                <Text style={[styles.previewBtnText, { color: fileMeta!.color }]}>Preview</Text>
               </View>
             </TouchableOpacity>
           </>
@@ -352,6 +365,41 @@ export default function HomeworkDetail() {
 
         <View style={{ height: 80 }} />
       </ScrollView>
+
+      {/* ── FILE PREVIEW MODAL ── */}
+      <Modal
+        visible={previewVisible}
+        animationType="slide"
+        onRequestClose={() => setPreviewVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+          <View style={{
+            height: 56, flexDirection: "row", alignItems: "center",
+            paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: "#E5E7EB",
+          }}>
+            <TouchableOpacity onPress={() => setPreviewVisible(false)} style={{ padding: 8 }}>
+              <Ionicons name="close-outline" size={24} color="#111827" />
+            </TouchableOpacity>
+            <Text style={{ fontWeight: "700", marginLeft: 8, fontSize: 16, flex: 1 }} numberOfLines={1}>
+              {title ?? homework ?? "Homework"}
+            </Text>
+          </View>
+          {previewUrl ? (
+            <WebView
+              source={previewHeaders ? { uri: previewUrl, headers: previewHeaders } : { uri: previewUrl }}
+              style={{ flex: 1 }}
+              startInLoadingState
+              renderLoading={() => (
+                <ActivityIndicator style={{ flex: 1 }} size="large" color={Colors.primary} />
+              )}
+            />
+          ) : (
+            <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ color: "#9CA3AF" }}>No preview available</Text>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
 
       {/* ── SUBMIT TASK MODAL ── */}
       <Modal visible={submitVisible} animationType="slide" transparent onRequestClose={() => setSubmitVisible(false)}>
@@ -474,7 +522,8 @@ const styles = StyleSheet.create({
   fileIconWrap: { width: 48, height: 48, borderRadius: 13, justifyContent: "center", alignItems: "center" },
   fileName:     { fontSize: 14, fontWeight: "700", color: Colors.textPrimary },
   fileType:     { fontSize: 11, fontWeight: "600", marginTop: 2 },
-  openBtn:      { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  previewBtn:     { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  previewBtnText: { fontSize: 12, fontWeight: "700" },
 
   /* date card */
   dateCard: {

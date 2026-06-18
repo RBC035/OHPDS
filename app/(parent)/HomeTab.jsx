@@ -330,6 +330,8 @@ export function HomeTab() {
   );
 }
 
+export default HomeTab;
+
 // ─────────────────────────────
 //  STYLES
 // ─────────────────────────────

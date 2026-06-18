@@ -5,7 +5,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Linking,
   Modal,
   ScrollView,
   StatusBar,
@@ -151,9 +150,9 @@ export default function TeacherHomeworkDetailScreen() {
     Record<string, string> | undefined
   >(undefined);
 
-  const [tasksVisible, setTasksVisible]   = useState(false);
-  const [studentTasks, setStudentTasks]   = useState<StudentTask[]>([]);
-  const [tasksLoading, setTasksLoading]   = useState(false);
+  const [tasksVisible, setTasksVisible] = useState(false);
+  const [studentTasks, setStudentTasks] = useState<StudentTask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -201,25 +200,15 @@ export default function TeacherHomeworkDetailScreen() {
   function resolveFileUrl(path?: string) {
     if (!path) return null;
     if (path.startsWith("http://") || path.startsWith("https://")) return path;
-    const base = api.defaults.baseURL ?? "";
-    try {
-      const origin = new URL(base).origin;
-      return origin + "/uploads/homework/" + path;
-    } catch {
-      return path;
-    }
+    const base = (api.defaults.baseURL ?? "").replace(/\/$/, "");
+    return base + "/uploads/homework/" + path;
   }
 
   function resolveTaskUrl(path?: string) {
     if (!path) return null;
     if (path.startsWith("http://") || path.startsWith("https://")) return path;
-    const base = api.defaults.baseURL ?? "";
-    try {
-      const origin = new URL(base).origin;
-      return origin + "/uploads/tasks/" + path;
-    } catch {
-      return path;
-    }
+    const base = (api.defaults.baseURL ?? "").replace(/\/$/, "");
+    return base + "/uploads/tasks/" + path;
   }
 
   async function openStudentTasks() {
@@ -229,10 +218,10 @@ export default function TeacherHomeworkDetailScreen() {
       const res = await StudentTaskService.getByHomework(homeworkId);
       const raw: any[] = res.data?.data ?? res.data ?? [];
       const mapped: StudentTask[] = raw.map((t: any) => ({
-        id:          Number(t.id),
-        homeworkId:  Number(t.homeworkId),
-        task:        t.task ?? "",
-        submitDate:  t.submitDate ?? "",
+        id: Number(t.id),
+        homeworkId: Number(t.homeworkId),
+        task: t.task ?? "",
+        submitDate: t.submitDate ?? "",
         studentName: t.studentName ?? t.student?.name ?? undefined,
       }));
       setStudentTasks(mapped);
@@ -243,19 +232,55 @@ export default function TeacherHomeworkDetailScreen() {
     }
   }
 
+  function friendlyName(raw: string, prefix: string, id: number | string): string {
+    const ext = (raw ?? "").split(".").pop()?.toLowerCase() ?? "";
+    return ext ? `${prefix}_${id}.${ext}` : `${prefix}_${id}`;
+  }
+
   function taskFileStyle(filename: string) {
     const ext = (filename ?? "").split(".").pop()?.toLowerCase() ?? "";
-    if (["jpg", "jpeg", "png"].includes(ext)) return { isImage: true,  icon: "image-outline"         as const, bg: "#F0FFF4", color: "#16A34A", label: ext.toUpperCase() };
-    if (ext === "pdf")                         return { isImage: false, icon: "document-text-outline"  as const, bg: "#FEE2E2", color: "#DC2626", label: "PDF"             };
-    if (ext === "doc" || ext === "docx")       return { isImage: false, icon: "document-outline"       as const, bg: "#EEF4FF", color: "#2563EB", label: ext.toUpperCase() };
-    return                                            { isImage: false, icon: "attach-outline"          as const, bg: "#F3F4F6", color: "#6B7280", label: "FILE"            };
+    if (["jpg", "jpeg", "png"].includes(ext))
+      return {
+        isImage: true,
+        icon: "image-outline" as const,
+        bg: "#F0FFF4",
+        color: "#16A34A",
+        label: ext.toUpperCase(),
+      };
+    if (ext === "pdf")
+      return {
+        isImage: false,
+        icon: "document-text-outline" as const,
+        bg: "#FEE2E2",
+        color: "#DC2626",
+        label: "PDF",
+      };
+    if (ext === "doc" || ext === "docx")
+      return {
+        isImage: false,
+        icon: "document-outline" as const,
+        bg: "#EEF4FF",
+        color: "#2563EB",
+        label: ext.toUpperCase(),
+      };
+    return {
+      isImage: false,
+      icon: "attach-outline" as const,
+      bg: "#F3F4F6",
+      color: "#6B7280",
+      label: "FILE",
+    };
   }
 
   function formatSubmitDate(d: string) {
     if (!d) return "—";
     const dt = new Date(d);
     if (isNaN(dt.getTime())) return d;
-    return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    return dt.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
   }
 
   if (loading) {
@@ -334,14 +359,22 @@ export default function TeacherHomeworkDetailScreen() {
                 return;
               }
               const resolved = resolveFileUrl(raw) || raw;
-              const token = await AsyncStorage.getItem("token");
-              setPreviewHeaders(
-                token ? { Authorization: `Bearer ${token}` } : undefined,
-              );
-              // prefer direct URL (with auth headers) so private PDFs can be fetched by the WebView
-              setPreviewUrl(resolved);
+              const ext = (raw ?? "").split(".").pop()?.toLowerCase() ?? "";
+              if (["pdf", "doc", "docx", "ppt", "pptx"].includes(ext)) {
+                // Google Docs Viewer renders PDF + Office files inline — no download needed
+                setPreviewHeaders(undefined);
+                setPreviewUrl(
+                  `https://docs.google.com/viewer?url=${encodeURIComponent(resolved)}&embedded=true`,
+                );
+              } else {
+                const token = await AsyncStorage.getItem("token");
+                setPreviewHeaders(
+                  token ? { Authorization: `Bearer ${token}` } : undefined,
+                );
+                setPreviewUrl(resolved);
+              }
               setPreviewVisible(true);
-            } catch (e) {
+            } catch {
               setPreviewUrl(null);
               setPreviewVisible(true);
             }
@@ -519,13 +552,17 @@ export default function TeacherHomeworkDetailScreen() {
               <Text style={taskModal.centerText}>No tasks submitted yet</Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={taskModal.scroll} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              contentContainerStyle={taskModal.scroll}
+              showsVerticalScrollIndicator={false}
+            >
               <Text style={taskModal.countLabel}>
-                {studentTasks.length} submission{studentTasks.length !== 1 ? "s" : ""}
+                {studentTasks.length} submission
+                {studentTasks.length !== 1 ? "s" : ""}
               </Text>
 
               {studentTasks.map((task, idx) => {
-                const fs  = taskFileStyle(task.task);
+                const fs = taskFileStyle(task.task);
                 const url = resolveTaskUrl(task.task);
                 return (
                   <View key={task.id} style={taskModal.card}>
@@ -542,10 +579,22 @@ export default function TeacherHomeworkDetailScreen() {
                         resizeMode="cover"
                       />
                     ) : (
-                      <View style={[taskModal.fileIconWrap, { backgroundColor: fs.bg }]}>
+                      <View
+                        style={[
+                          taskModal.fileIconWrap,
+                          { backgroundColor: fs.bg },
+                        ]}
+                      >
                         <Ionicons name={fs.icon} size={36} color={fs.color} />
-                        <View style={[taskModal.fileBadge, { backgroundColor: fs.color }]}>
-                          <Text style={taskModal.fileBadgeText}>{fs.label}</Text>
+                        <View
+                          style={[
+                            taskModal.fileBadge,
+                            { backgroundColor: fs.color },
+                          ]}
+                        >
+                          <Text style={taskModal.fileBadgeText}>
+                            {fs.label}
+                          </Text>
                         </View>
                       </View>
                     )}
@@ -554,24 +603,68 @@ export default function TeacherHomeworkDetailScreen() {
                     <View style={taskModal.meta}>
                       <View style={taskModal.metaLeft}>
                         {task.studentName ? (
-                          <Text style={taskModal.studentName}>{task.studentName}</Text>
+                          <Text style={taskModal.studentName}>
+                            {task.studentName}
+                          </Text>
                         ) : null}
                         <View style={taskModal.dateRow}>
-                          <Ionicons name="calendar-outline" size={12} color="#6B7280" />
+                          <Ionicons name="document-outline" size={12} color="#6B7280" />
+                          <Text style={taskModal.dateText}>
+                            {friendlyName(task.task, "Task", task.id)}
+                          </Text>
+                        </View>
+                        <View style={taskModal.dateRow}>
+                          <Ionicons
+                            name="calendar-outline"
+                            size={12}
+                            color="#6B7280"
+                          />
                           <Text style={taskModal.dateText}>
                             Submitted: {formatSubmitDate(task.submitDate)}
                           </Text>
                         </View>
                       </View>
 
-                      {url && (
+                      {url && !fs.isImage && (
                         <TouchableOpacity
-                          style={[taskModal.openBtn, { backgroundColor: fs.bg }]}
+                          style={[
+                            taskModal.openBtn,
+                            { backgroundColor: fs.bg },
+                          ]}
                           activeOpacity={0.8}
-                          onPress={() => Linking.openURL(url).catch(() => {})}
+                          onPress={() => {
+                            const ext =
+                              (task.task ?? "")
+                                .split(".")
+                                .pop()
+                                ?.toLowerCase() ?? "";
+                            if (
+                              ["pdf", "doc", "docx", "ppt", "pptx"].includes(
+                                ext,
+                              )
+                            ) {
+                              setPreviewHeaders(undefined);
+                              setPreviewUrl(
+                                `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`,
+                              );
+                            } else {
+                              setPreviewHeaders(undefined);
+                              setPreviewUrl(url);
+                            }
+                            setTasksVisible(false);
+                            setPreviewVisible(true);
+                          }}
                         >
-                          <Ionicons name="open-outline" size={15} color={fs.color} />
-                          <Text style={[taskModal.openBtnText, { color: fs.color }]}>Open</Text>
+                          <Ionicons
+                            name="eye-outline"
+                            size={15}
+                            color={fs.color}
+                          />
+                          <Text
+                            style={[taskModal.openBtnText, { color: fs.color }]}
+                          >
+                            Preview
+                          </Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -861,82 +954,124 @@ const styles = StyleSheet.create({
 
   /* Student tasks button */
   tasksBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, backgroundColor: "#7C3AED",
-    borderRadius: 14, paddingVertical: 15, marginTop: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#7C3AED",
+    borderRadius: 14,
+    paddingVertical: 15,
+    marginTop: 22,
   },
   tasksBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 
   /* Action */
   editAction: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, backgroundColor: "#2563EB",
-    borderRadius: 14, paddingVertical: 15, marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    borderRadius: 14,
+    paddingVertical: 15,
+    marginTop: 12,
   },
   editActionText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });
 
 const taskModal = StyleSheet.create({
   header: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     backgroundColor: "#fff",
-    borderBottomWidth: 1, borderBottomColor: "#E5E7EB",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
     gap: 12,
   },
   headerTitle: { fontSize: 17, fontWeight: "800", color: "#111827" },
-  headerSub:   { fontSize: 11, color: "#6B7280", marginTop: 1 },
+  headerSub: { fontSize: 11, color: "#6B7280", marginTop: 1 },
   closeBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
-  center:     { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   centerText: { fontSize: 14, color: "#9CA3AF" },
 
-  scroll:     { paddingHorizontal: 16, paddingTop: 14 },
+  scroll: { paddingHorizontal: 16, paddingTop: 14 },
   countLabel: {
-    fontSize: 11, fontWeight: "700", color: "#6B7280",
-    textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12,
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 12,
   },
 
   card: {
-    backgroundColor: "#fff", borderRadius: 16,
-    borderWidth: 1, borderColor: "#E5E7EB",
-    marginBottom: 14, overflow: "hidden",
-    elevation: 2, shadowColor: "#000",
-    shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 14,
+    overflow: "hidden",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
   },
   indexBadge: {
-    position: "absolute", top: 10, left: 10, zIndex: 2,
+    position: "absolute",
+    top: 10,
+    left: 10,
+    zIndex: 2,
     backgroundColor: "rgba(0,0,0,0.5)",
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   indexText: { fontSize: 11, fontWeight: "800", color: "#fff" },
 
   taskImage: { width: "100%", height: 200 },
 
   fileIconWrap: {
-    width: "100%", height: 140,
-    alignItems: "center", justifyContent: "center", gap: 10,
+    width: "100%",
+    height: 140,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
   },
   fileBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
   fileBadgeText: { fontSize: 11, fontWeight: "800", color: "#fff" },
 
   meta: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 14, paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
     gap: 10,
   },
-  metaLeft:    { flex: 1, gap: 3 },
+  metaLeft: { flex: 1, gap: 3 },
   studentName: { fontSize: 13, fontWeight: "700", color: "#111827" },
-  dateRow:     { flexDirection: "row", alignItems: "center", gap: 5 },
-  dateText:    { fontSize: 12, color: "#6B7280" },
+  dateRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  dateText: { fontSize: 12, color: "#6B7280" },
 
   openBtn: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
   },
   openBtnText: { fontSize: 12, fontWeight: "700" },
 });

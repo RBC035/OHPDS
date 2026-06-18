@@ -1,11 +1,13 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants";
 
 export type Tab = "home" | "children" | "settings";
 
 export function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
+  const insets = useSafeAreaInsets();
   const TABS: { key: Tab; icon: string; label: string }[] = [
     { key: "children", icon: "people-outline",  label: "Children" },
     { key: "home",     icon: "home",             label: "Home"     },
@@ -13,7 +15,7 @@ export function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) =
   ];
 
   return (
-    <View style={tb.bar}>
+    <View style={[tb.bar, { height: 84 + insets.bottom, paddingBottom: 12 + insets.bottom }]}>
       {TABS.map((tab) => {
         const isHome   = tab.key === "home";
         const isActive = active === tab.key;
@@ -56,7 +58,6 @@ const tb = StyleSheet.create({
   bar: {
     position: "absolute",
     bottom: 0, left: 0, right: 0,
-    height: 84,
     backgroundColor: Colors.tabBackground,
     flexDirection: "row",
     alignItems: "center",
@@ -69,7 +70,6 @@ const tb = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 14,
-    paddingBottom: 12,
   },
   tabItem:        { alignItems: "center", flex: 1 },
   iconWrap:       { width: 40, height: 32, borderRadius: 10, justifyContent: "center", alignItems: "center" },
@@ -86,3 +86,5 @@ const tb = StyleSheet.create({
   homeBtnActive: { backgroundColor: Colors.primary },
   homeLabel:     { fontSize: 11, color: Colors.tabInactive, marginTop: 5, fontWeight: "600" },
 });
+
+export default TabBar;

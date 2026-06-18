@@ -456,3 +456,5 @@ const styles = StyleSheet.create({
   emptyText:  { fontSize: 15, fontWeight: "700", color: Colors.textPrimary },
   emptySub:   { fontSize: 12, color: Colors.textSecondary },
 });
+
+export default ChildrenTab;

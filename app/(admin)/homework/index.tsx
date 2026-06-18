@@ -222,7 +222,12 @@ export default function AdminHomeworkScreen() {
         item.externalId ??
         "",
     ),
-    title: item.homework ?? item.title ?? item.name ?? "",
+    title: (() => {
+      const t = item.title ?? item.name ?? "";
+      const hw = item.homework ?? "";
+      const ext = hw.split(".").pop()?.toLowerCase() ?? "";
+      return t ? (ext ? `${t}.${ext}` : t) : hw;
+    })(),
     subject: item.subject?.name ?? item.subject ?? "General",
     class: item.class?.name ?? item.class ?? item.className ?? "",
     teacher: item.teacher?.name ?? item.teacher ?? "",
@@ -237,6 +242,11 @@ export default function AdminHomeworkScreen() {
       const s = String(item.status ?? item.state ?? "").toLowerCase();
       if (s.includes("submi")) return "Submitted";
       if (s.includes("over")) return "Overdue";
+      const endDate = item.endDate ?? item.dueDate ?? item.due;
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime()) && end < new Date()) return "Overdue";
+      }
       return "Pending";
     })(),
     totalStudents: Number(item.totalStudents ?? item.total_students ?? 0),

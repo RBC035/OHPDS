@@ -1,7 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -14,6 +17,8 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
+import api from "../../../services/api/axios";
 import { HomeworkService } from "../../../services/api/homeworkService";
 
 type Submission = {
@@ -29,6 +34,7 @@ type Submission = {
 
 type HomeworkDetail = {
   title: string;
+  homework: string;
   subject: string;
   class: string;
   teacher: string;
@@ -95,6 +101,9 @@ export default function AdminHomeworkDetailScreen() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("submissions");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewHeaders, setPreviewHeaders] = useState<Record<string, string> | undefined>(undefined);
 
   const toArr = (res: any): any[] => {
     const d = res?.data?.data ?? res?.data;
@@ -117,7 +126,13 @@ export default function AdminHomeworkDetailScreen() {
   });
 
   const mapDetail = (item: any): HomeworkDetail => ({
-    title: item.homework ?? item.title ?? "",
+    title: (() => {
+      const t = item.title ?? "";
+      const hw = item.homework ?? "";
+      const ext = hw.split(".").pop()?.toLowerCase() ?? "";
+      return t ? (ext ? `${t}.${ext}` : t) : hw;
+    })(),
+    homework: item.homework ?? "",
     subject: item.subject?.name ?? item.subject ?? "",
     class: item.class?.name ?? item.class ?? item.className ?? "",
     teacher: item.teacher?.name ?? item.teacher ?? "",
@@ -133,6 +148,11 @@ export default function AdminHomeworkDetailScreen() {
       const s = String(item.status ?? item.state ?? "").toLowerCase();
       if (s.includes("submi")) return "Submitted";
       if (s.includes("over")) return "Overdue";
+      const endDate = item.endDate ?? item.dueDate ?? item.due;
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime()) && end < new Date()) return "Overdue";
+      }
       return "Pending";
     })(),
     totalStudents: Number(
@@ -140,6 +160,33 @@ export default function AdminHomeworkDetailScreen() {
     ),
     submissions: (item.submissions ?? item.submitted ?? []).map(mapSubmission),
   });
+
+  function resolveFileUrl(path?: string): string | null {
+    if (!path) return null;
+    if (path.startsWith("http://") || path.startsWith("https://")) return path;
+    const base = (api.defaults.baseURL ?? "").replace(/\/$/, "");
+    return `${base}/uploads/homework/${path}`;
+  }
+
+  async function openPreview() {
+    if (!hwInfo?.homework) { setPreviewUrl(null); setPreviewVisible(true); return; }
+    try {
+      const url = resolveFileUrl(hwInfo.homework)!;
+      const ext = hwInfo.homework.split(".").pop()?.toLowerCase() ?? "";
+      if (["pdf", "doc", "docx", "ppt", "pptx"].includes(ext)) {
+        setPreviewHeaders(undefined);
+        setPreviewUrl(`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`);
+      } else {
+        const token = await AsyncStorage.getItem("token");
+        setPreviewHeaders(token ? { Authorization: `Bearer ${token}` } : undefined);
+        setPreviewUrl(url);
+      }
+      setPreviewVisible(true);
+    } catch {
+      setPreviewUrl(null);
+      setPreviewVisible(true);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -277,7 +324,15 @@ export default function AdminHomeworkDetailScreen() {
             />
             <Text style={styles.infoText}>Due {hwInfo.dueDate}</Text>
           </View>
-          <Text style={styles.description}>{hwInfo.description}</Text>
+          {hwInfo.description ? (
+            <Text style={styles.description}>{hwInfo.description}</Text>
+          ) : null}
+          {hwInfo.homework ? (
+            <TouchableOpacity style={styles.previewBtn} onPress={openPreview} activeOpacity={0.8}>
+              <Ionicons name="eye-outline" size={14} color="#fff" />
+              <Text style={styles.previewBtnText}>Preview Homework File</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* stats strip */}
@@ -567,6 +622,39 @@ export default function AdminHomeworkDetailScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── FILE PREVIEW MODAL ── */}
+      <Modal
+        visible={previewVisible}
+        animationType="slide"
+        onRequestClose={() => setPreviewVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+          <View style={styles.previewBar}>
+            <TouchableOpacity onPress={() => setPreviewVisible(false)} style={{ padding: 8 }}>
+              <Ionicons name="close-outline" size={24} color="#111827" />
+            </TouchableOpacity>
+            <Text style={styles.previewBarTitle} numberOfLines={1}>
+              {hwInfo.title}
+            </Text>
+          </View>
+          {previewUrl ? (
+            <WebView
+              source={previewHeaders ? { uri: previewUrl, headers: previewHeaders } : { uri: previewUrl }}
+              style={{ flex: 1 }}
+              startInLoadingState
+              renderLoading={() => (
+                <ActivityIndicator style={{ flex: 1 }} size="large" color="#D97706" />
+              )}
+            />
+          ) : (
+            <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="document-outline" size={40} color="#D1D5DB" />
+              <Text style={{ color: "#9CA3AF", marginTop: 10 }}>No preview available</Text>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -620,7 +708,29 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     marginBottom: 14,
+    gap: 8,
   },
+  previewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
+  previewBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  previewBar: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  previewBarTitle: { fontWeight: "700", marginLeft: 8, fontSize: 16, flex: 1, color: "#111827" },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",

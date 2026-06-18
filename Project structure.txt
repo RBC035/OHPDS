@@ -3,6 +3,32 @@ Project stucture for OHPDS
 
 ps for mail => School@2026
 
+=> npx expo run:android --variant release
+
+=> ORG_GRADLE_PROJECT_ndkVersion=26.3.11579264 npx expo run:android
+
+
+// hatua za ku rebuild na ku build tena 
+
+# 1. Confirm internet
+ping -c 3 repo.maven.apache.org
+
+# 2. Clear build artifacts
+cd ~/ReactNavite/Projects/OHPDS/android
+./gradlew --stop
+rm -rf .gradle .kotlin build app/build app/.cxx .cxx
+cd ~/ReactNavite/Projects/OHPDS
+find node_modules -type d -name ".cxx" -exec rm -rf {} + 2>/dev/null
+
+# 3. Check space
+df -h ~
+
+# 4. Rebuild
+npx expo run:android                  # debug (for testing)
+# or
+npx expo run:android --variant release   # standalone APK
+
+
 school-management-app/
 │
 ├── app/                         # Expo Router
