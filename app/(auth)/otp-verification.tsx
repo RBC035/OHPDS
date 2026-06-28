@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 
 import { StatusBar } from "expo-status-bar";
@@ -24,14 +25,83 @@ import {
 } from "@/constants/theme";
 import { FontWeight } from "@/constants";
 
+import { PasswordResetService } from "@/services/api/passwordResetService";
+
+const OTP_LENGTH = 6;
+
 export default function OTPVerification() {
-  const { email } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const phone = String(params.phone ?? "");
 
   const [otp, setOtp] = useState("");
   const [focused, setFocused] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleVerify = () => {
-    router.push("/(auth)/reset-password");
+  const formatPhone = (p: string) => {
+    const digits = p.replace(/\D/g, "");
+    const nat = digits.startsWith("255")
+      ? digits.slice(3)
+      : digits.replace(/^0/, "");
+    if (nat.length === 9) {
+      return `+255 ${nat.slice(0, 3)} ${nat.slice(3, 6)} ${nat.slice(6)}`;
+    }
+    return `+255 ${nat}`;
+  };
+
+  // ── OTP input: digits only, max 6 ──
+  const onChangeOtp = (t: string) => {
+    const d = t.replace(/\D/g, "").slice(0, OTP_LENGTH);
+    setOtp(d);
+    setError("");
+  };
+
+  // ── Verify against the backend ──
+  const handleVerify = async () => {
+    if (otp.length !== OTP_LENGTH) {
+      setError(`Enter the ${OTP_LENGTH}-digit code`);
+      return;
+    }
+
+    setError("");
+    setLoading(true);
+    try {
+      const res = await PasswordResetService.verifyOtp({ phone, otp });
+
+      if (res.success) {
+        // Pass phone + otp forward; the reset step needs both.
+        router.push({
+          pathname: "/(auth)/reset-password",
+          params: { phone, otp },
+        });
+      } else {
+        setError(res.message || "Invalid or expired OTP");
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "Invalid or expired OTP");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Auto-verify once the 6th digit is entered ──
+  useEffect(() => {
+    if (otp.length === OTP_LENGTH && !loading) {
+      handleVerify();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp]);
+
+  // ── Resend a fresh code ──
+  const handleResend = async () => {
+    if (loading) return;
+    setError("");
+    setOtp("");
+    try {
+      await PasswordResetService.requestOtp({ phone });
+    } catch {
+      /* generic response; nothing to surface */
+    }
   };
 
   return (
@@ -57,7 +127,7 @@ export default function OTPVerification() {
 
         <Text style={styles.title}>Verify OTP</Text>
 
-        <Text style={styles.subtitle}>Sent to {email}</Text>
+        <Text style={styles.subtitle}>Code sent to {formatPhone(phone)}</Text>
       </LinearGradient>
 
       {/* ───────── CARD ───────── */}
@@ -67,10 +137,16 @@ export default function OTPVerification() {
           <Text style={styles.badgeText}>OTP verification</Text>
         </View>
 
-        <Text style={styles.label}>ENTER OTP CODE</Text>
+        <Text style={styles.label}>ENTER {OTP_LENGTH}-DIGIT CODE</Text>
 
         {/* INPUT */}
-        <View style={[styles.inputWrapper, focused && styles.inputFocused]}>
+        <View
+          style={[
+            styles.inputWrapper,
+            focused && styles.inputFocused,
+            !!error && styles.inputError,
+          ]}
+        >
           <Ionicons
             name="lock-closed-outline"
             size={18}
@@ -79,31 +155,60 @@ export default function OTPVerification() {
           />
 
           <TextInput
-            placeholder="Enter OTP"
+            placeholder="••••••"
             placeholderTextColor={Colors.textMuted}
             value={otp}
-            onChangeText={setOtp}
-            keyboardType="numeric"
+            onChangeText={onChangeOtp}
+            keyboardType="number-pad"
+            maxLength={OTP_LENGTH}
             style={styles.input}
+            editable={!loading}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
           />
+
+          {loading && <ActivityIndicator size="small" color={Colors.primary} />}
         </View>
 
-        {/* BUTTON */}
-        <TouchableOpacity style={styles.button} onPress={handleVerify}>
-          <Text style={styles.buttonText}>Verify OTP</Text>
+        {!!error && (
+          <View style={styles.errorRow}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={14}
+              color={Colors.error}
+            />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
 
-          <Ionicons
-            name="arrow-forward"
-            size={18}
-            color="#fff"
-            style={{ marginLeft: 6 }}
-          />
+        {/* BUTTON (kept — auto-verify doesn't replace it) */}
+        <TouchableOpacity
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleVerify}
+          disabled={loading}
+          activeOpacity={0.85}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Text style={styles.buttonText}>Verify OTP</Text>
+              <Ionicons
+                name="arrow-forward"
+                size={18}
+                color="#fff"
+                style={{ marginLeft: 6 }}
+              />
+            </>
+          )}
         </TouchableOpacity>
 
-        {/* BACK */}
-        <TouchableOpacity onPress={() => router.back()} style={styles.backRow}>
+        {/* RESEND */}
+        <TouchableOpacity
+          onPress={handleResend}
+          style={styles.backRow}
+          disabled={loading}
+        >
           <Ionicons name="refresh-outline" size={16} color={Colors.primary} />
           <Text style={styles.back}>Resend OTP</Text>
         </TouchableOpacity>
@@ -226,11 +331,30 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
 
+  inputError: {
+    borderColor: Colors.error,
+    backgroundColor: "#FFF8F8",
+  },
+
   input: {
     flex: 1,
-    fontFamily: FontFamily.semiBold,
-    fontSize: FontSize.md,
+    fontFamily: FontFamily.headingBold,
+    fontSize: FontSize.xl,
     color: Colors.textPrimary,
+    letterSpacing: 8,
+  },
+
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: Spacing[2],
+  },
+
+  errorText: {
+    color: Colors.error,
+    fontSize: FontSize.xs,
+    fontFamily: FontFamily.semiBold,
   },
 
   button: {
@@ -242,6 +366,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing[4] - 2,
     borderRadius: Radius.md,
     ...Shadows.button,
+  },
+
+  buttonDisabled: {
+    opacity: 0.7,
   },
 
   buttonText: {

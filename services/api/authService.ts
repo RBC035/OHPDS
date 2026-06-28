@@ -11,6 +11,39 @@ export interface SetupAdminPayload {
   password: string;
 }
 
+export interface ChangeRolePayload {
+  username: string;
+  role: 'admin' | 'teacher' | 'parent';
+}
+
+// Self change-password (teacher / parent / admin): current + new required.
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
+// Admin override: only target username + new password.
+export interface AdminChangePasswordPayload {
+  username: string;
+  newPassword: string;
+}
+
+// OTP password reset (logged out), phone-based.
+export interface RequestOtpPayload {
+  phone: string;
+}
+
+export interface VerifyOtpPayload {
+  phone: string;
+  otp: string;
+}
+
+export interface ResetPasswordPayload {
+  phone: string;
+  otp: string;
+  password: string;
+}
+
 export const AuthService = {
   async login(payload: LoginPayload) {
     const response = await api.post('/login', payload);
@@ -21,7 +54,9 @@ export const AuthService = {
     }
 
     let userToStore = response.data.user ?? {};
-    const role = response.data.role ?? response.data.user?.role;
+
+    // Backend returns role inside `user`, not at the top level.
+    const role: string | undefined = response.data.user?.role;
 
     // Auth table only has username/password. email === username for both
     // teachers and parents, so fetch the relevant table and merge the full
@@ -64,14 +99,38 @@ export const AuthService = {
     return api.post('/setup/admin', payload);
   },
 
-  changeRole(data: {
-    username: string;
-    role: string;
-  }) {
-    return api.post('/change-role', data);
+  changeRole(payload: ChangeRolePayload) {
+    return api.post('/change-role', payload);
   },
 
-  logout() {
-    return AsyncStorage.removeItem('token');
+  // Logged-in user changes their own password (current password required).
+  changePassword(payload: ChangePasswordPayload) {
+    return api.post('/change-password', payload);
+  },
+
+  // Admin changes any user's password (no current password needed).
+  adminChangePassword(payload: AdminChangePasswordPayload) {
+    return api.post('/admin/change-password', payload);
+  },
+
+  // --- OTP password reset (logged out) ---
+
+  // Step 1: send OTP to the phone registered for this user.
+  requestOtp(payload: RequestOtpPayload) {
+    return api.post('/forgot-password', payload);
+  },
+
+  // Step 2: verify the OTP (optional standalone check before the reset form).
+  verifyOtp(payload: VerifyOtpPayload) {
+    return api.post('/verify-otp', payload);
+  },
+
+  // Step 3: reset the password with a valid OTP.
+  resetPassword(payload: ResetPasswordPayload) {
+    return api.post('/reset-password', payload);
+  },
+
+  async logout() {
+    await AsyncStorage.multiRemove(['token', 'user']);
   },
 };

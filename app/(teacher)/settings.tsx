@@ -21,8 +21,15 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { AuthService } from "../../services/api/authService";
-import api from "../../services/api/axios";
 import { TeacherService } from "../../services/api/teacherService";
+
+// Reduce any stored phone (255712…, 0712…, +255 712…) to its 9 national digits.
+function toNationalDigits(phone: string): string {
+  let d = (phone ?? "").replace(/\D/g, "");
+  if (d.startsWith("255")) d = d.slice(3);
+  else if (d.startsWith("0")) d = d.replace(/^0+/, "");
+  return d.slice(0, 9);
+}
 
 // ── Password field with show/hide toggle ──────────────────────────────────────
 
@@ -78,7 +85,7 @@ export default function SettingsScreen() {
   const [editVisible, setEditVisible] = useState(false);
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
-  const [editPhone, setEditPhone] = useState("");
+  const [editPhone, setEditPhone] = useState(""); // 9 national digits only
   const [savingProfile, setSavingProfile] = useState(false);
 
   // change password modal
@@ -97,13 +104,21 @@ export default function SettingsScreen() {
           setUser(u);
           setEditName(u.name ?? "");
           setEditEmail(u.email ?? "");
-          setEditPhone(u.phone ?? "");
+          setEditPhone(toNationalDigits(u.phone ?? ""));
         }
       } catch {
         /* ignore */
       }
     })();
   }, []);
+
+  // Phone field: digits only, block leading 0, cap at 9.
+  const onChangePhone = (t: string) => {
+    let d = t.replace(/\D/g, "");
+    d = d.replace(/^0+/, ""); // typing 0 then 6 -> 6 becomes first digit
+    if (d.length > 9) d = d.slice(0, 9);
+    setEditPhone(d);
+  };
 
   function staffId(id?: number | string) {
     if (!id) return "OHPDS-TCH-0000";
@@ -129,13 +144,20 @@ export default function SettingsScreen() {
       Alert.alert("Required", "Please enter your name.");
       return;
     }
+    if (editPhone.length !== 9) {
+      Alert.alert(
+        "Invalid phone",
+        "Enter a valid 9-digit phone number after +255.",
+      );
+      return;
+    }
     try {
       setSavingProfile(true);
       if (!user?.id) throw new Error("Missing user id");
       const payload = {
         name: editName,
         email: editEmail ?? "",
-        phone: editPhone ?? "",
+        phone: `255${editPhone}`, // store full international form
         gender: user?.gender ?? "",
       };
       await TeacherService.update(Number(user.id), payload as any);
@@ -155,6 +177,10 @@ export default function SettingsScreen() {
   }
 
   async function handleChangePassword() {
+    if (!currentPwd.trim()) {
+      Alert.alert("Required", "Please enter your current password.");
+      return;
+    }
     if (!newPwd.trim()) {
       Alert.alert("Required", "Please enter a new password.");
       return;
@@ -169,9 +195,11 @@ export default function SettingsScreen() {
     }
     try {
       setSavingPwd(true);
-      const body: any = { password: newPwd };
-      if (currentPwd) body.currentPassword = currentPwd;
-      await api.post("/change-password", body);
+      // Self-service change: backend requires BOTH current and new password.
+      await AuthService.changePassword({
+        currentPassword: currentPwd,
+        newPassword: newPwd,
+      });
       setPwdVisible(false);
       setCurrentPwd("");
       setNewPwd("");
@@ -231,7 +259,7 @@ export default function SettingsScreen() {
                     setUser(u);
                     setEditName(u.name ?? "");
                     setEditEmail(u.email ?? "");
-                    setEditPhone(u.phone ?? "");
+                    setEditPhone(toNationalDigits(u.phone ?? ""));
                   }
                 } catch {
                   /* ignore */
@@ -448,15 +476,30 @@ export default function SettingsScreen() {
                 <Text style={styles.inputReadOnlyText}>{editEmail || "—"}</Text>
               </View>
 
-              <Text style={styles.label}>Phone</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Phone number"
-                placeholderTextColor="#9CA3AF"
-                value={editPhone}
-                onChangeText={setEditPhone}
-                keyboardType="phone-pad"
-              />
+              <Text style={styles.label}>
+                Phone <Text style={styles.required}>*</Text>
+              </Text>
+              <View style={styles.phoneWrap}>
+                <View style={styles.prefixBox}>
+                  <Ionicons
+                    name="call-outline"
+                    size={15}
+                    color="#2563EB"
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={styles.prefixText}>+255</Text>
+                </View>
+                <View style={styles.prefixDivider} />
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="712 345 678"
+                  placeholderTextColor="#9CA3AF"
+                  value={editPhone}
+                  onChangeText={onChangePhone}
+                  keyboardType="number-pad"
+                  maxLength={9}
+                />
+              </View>
 
               <TouchableOpacity
                 style={[styles.submitBtn, savingProfile && { opacity: 0.6 }]}
@@ -512,7 +555,7 @@ export default function SettingsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.sheetTitle}>Change password</Text>
                 <Text style={styles.sheetSub}>
-                  Enter and confirm your new password
+                  Enter your current and new password
                 </Text>
               </View>
               <TouchableOpacity
@@ -528,7 +571,7 @@ export default function SettingsScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <PasswordInput
-                label="Current password (optional)"
+                label="Current password"
                 value={currentPwd}
                 onChangeText={setCurrentPwd}
                 placeholder="Current password"
@@ -779,6 +822,34 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   inputReadOnlyText: { fontSize: 14, color: "#9CA3AF" },
+
+  // Phone input with fixed +255 prefix
+  phoneWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    height: 48,
+  },
+  prefixBox: { flexDirection: "row", alignItems: "center" },
+  prefixText: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  prefixDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: "#E5E7EB",
+    marginHorizontal: 12,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+    letterSpacing: 1,
+    paddingVertical: 0,
+  },
 
   passwordWrap: {
     flexDirection: "row",

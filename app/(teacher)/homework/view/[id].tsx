@@ -23,14 +23,25 @@ import api from "../../../../services/api/axios";
 import { ClassService } from "../../../../services/api/classService";
 import { HomeworkService } from "../../../../services/api/homeworkService";
 import { StudentClassService } from "../../../../services/api/studentClassService";
+import { StudentSubjectService } from "../../../../services/api/studentSubjectService";
+import { StudentService } from "../../../../services/api/studentService";
 import { StudentTaskService } from "../../../../services/api/studentTaskService";
 
 type StudentTask = {
   id: number;
   homeworkId: number;
+  studentId: number;
   task: string;
   submitDate: string;
-  studentName?: string;
+};
+
+type RosterEntry = {
+  studentId: number;
+  name: string;
+  submitted: boolean;
+  submitDate?: string;
+  onTime?: boolean;
+  tasks: StudentTask[];
 };
 
 type Homework = {
@@ -46,7 +57,6 @@ type Homework = {
   className?: string;
 };
 
-/* ── File type → icon + colour (PDF red · DOC blue · PPT orange) ── */
 function fileMeta(path: string) {
   const ext = (path ?? "").split(".").pop()?.toLowerCase() ?? "";
   if (ext === "pdf")
@@ -114,7 +124,6 @@ function prettyDate(d?: string): string {
   });
 }
 
-/* Days remaining until end date (relative to today) */
 function remainingLabel(end?: string): {
   text: string;
   color: string;
@@ -131,6 +140,43 @@ function remainingLabel(end?: string): {
   if (diff === 1)
     return { text: "1 day left", color: "#EA580C", bg: "#FFF1E6" };
   return { text: `${diff} days left`, color: "#16A34A", bg: "#DCFCE7" };
+}
+
+function getInitials(name: string) {
+  return (name ?? "")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+const AVATAR_COLORS = [
+  "#2563EB",
+  "#7C3AED",
+  "#16A34A",
+  "#EA580C",
+  "#0891B2",
+  "#DB2777",
+  "#D97706",
+];
+function avatarColor(key: string) {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++)
+    hash = key.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function formatSubmitDate(d: string) {
+  if (!d) return "—";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return d;
+  return dt.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export default function TeacherHomeworkDetailScreen() {
@@ -152,8 +198,13 @@ export default function TeacherHomeworkDetailScreen() {
   >(undefined);
 
   const [tasksVisible, setTasksVisible] = useState(false);
-  const [studentTasks, setStudentTasks] = useState<StudentTask[]>([]);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"submitted" | "pending">(
+    "submitted",
+  );
+
+  const [studentDetail, setStudentDetail] = useState<RosterEntry | null>(null);
 
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const [imageViewerUrl, setImageViewerUrl] = useState<string | null>(null);
@@ -165,13 +216,10 @@ export default function TeacherHomeworkDetailScreen() {
       const res = await HomeworkService.getOne(homeworkId);
       const data: Homework = res.data?.data ?? res.data ?? null;
       setHw(data);
-
       if (data?.classId != null) {
-        // class name
         try {
-          if (data.className) {
-            setClassName(data.className);
-          } else {
+          if (data.className) setClassName(data.className);
+          else {
             const clsRes = await ClassService.getAll();
             const list: any[] = clsRes.data?.data ?? clsRes.data ?? [];
             const found = list.find(
@@ -182,7 +230,6 @@ export default function TeacherHomeworkDetailScreen() {
         } catch {
           setClassName(`Class #${data.classId}`);
         }
-        // student count
         try {
           const scRes = await StudentClassService.getByClass(data.classId);
           const arr: any[] = scRes.data?.data ?? scRes.data ?? [];
@@ -208,7 +255,6 @@ export default function TeacherHomeworkDetailScreen() {
     const base = (api.defaults.baseURL ?? "").replace(/\/$/, "");
     return base + "/uploads/homework/" + path;
   }
-
   function resolveTaskUrl(path?: string) {
     if (!path) return null;
     if (path.startsWith("http://") || path.startsWith("https://")) return path;
@@ -218,74 +264,87 @@ export default function TeacherHomeworkDetailScreen() {
 
   async function openStudentTasks() {
     setTasksLoading(true);
+    setActiveTab("submitted");
     setTasksVisible(true);
     try {
-      const res = await StudentTaskService.getByHomework(homeworkId);
-      const raw: any[] = res.data?.data ?? res.data ?? [];
-      const mapped: StudentTask[] = raw.map((t: any) => ({
+      if (!hw) {
+        setRoster([]);
+        return;
+      }
+      const [taskRes, classRes, subjRes, allStudentsRes] = await Promise.all([
+        StudentTaskService.getByHomework(homeworkId),
+        StudentClassService.getByClass(hw.classId),
+        StudentSubjectService.getBySubject(hw.subjectId),
+        StudentService.getAll(),
+      ]);
+      const taskRaw: any[] = taskRes.data?.data ?? taskRes.data ?? [];
+      const tasks: StudentTask[] = taskRaw.map((t: any) => ({
         id: Number(t.id),
         homeworkId: Number(t.homeworkId),
+        studentId: Number(t.studentId),
         task: t.task ?? "",
         submitDate: t.submitDate ?? "",
-        studentName: t.studentName ?? t.student?.name ?? undefined,
       }));
-      setStudentTasks(mapped);
+      const classRows: any[] = classRes.data?.data ?? classRes.data ?? [];
+      const subjRows: any[] = subjRes.data?.data ?? subjRes.data ?? [];
+      const allStudents: any[] =
+        allStudentsRes.data?.data ?? allStudentsRes.data ?? [];
+      const classIds = new Set(
+        classRows.map((r) => String(r.stuentId ?? r.studentId)),
+      );
+      const subjIds = new Set(
+        subjRows.map((r) => String(r.stuentId ?? r.studentId)),
+      );
+      const rosterIds = [...classIds].filter((id) => subjIds.has(id));
+      const nameById = new Map<string, string>(
+        allStudents.map((s: any) => [
+          String(s.id),
+          s.name ?? `Student #${s.id}`,
+        ]),
+      );
+      const tasksByStudent = new Map<string, StudentTask[]>();
+      tasks.forEach((t) => {
+        const key = String(t.studentId);
+        const arr = tasksByStudent.get(key) ?? [];
+        arr.push(t);
+        tasksByStudent.set(key, arr);
+      });
+      const endDate = hw.endDate ? new Date(hw.endDate) : null;
+      const built: RosterEntry[] = rosterIds.map((id) => {
+        const studentTasks = (tasksByStudent.get(id) ?? []).sort(
+          (a, b) =>
+            new Date(a.submitDate).getTime() - new Date(b.submitDate).getTime(),
+        );
+        const submitted = studentTasks.length > 0;
+        let submitDate: string | undefined;
+        let onTime: boolean | undefined;
+        if (submitted) {
+          submitDate = studentTasks[0].submitDate;
+          if (endDate && submitDate)
+            onTime = new Date(submitDate).getTime() <= endDate.getTime();
+        }
+        return {
+          studentId: Number(id),
+          name: nameById.get(id) ?? `Student #${id}`,
+          submitted,
+          submitDate,
+          onTime,
+          tasks: studentTasks,
+        };
+      });
+      built.sort((a, b) => a.name.localeCompare(b.name));
+      setRoster(built);
     } catch {
-      setStudentTasks([]);
+      setRoster([]);
     } finally {
       setTasksLoading(false);
     }
   }
 
-  function friendlyName(raw: string, prefix: string, id: number | string): string {
-    const ext = (raw ?? "").split(".").pop()?.toLowerCase() ?? "";
-    return ext ? `${prefix}_${id}.${ext}` : `${prefix}_${id}`;
-  }
-
-  function taskFileStyle(filename: string) {
-    const ext = (filename ?? "").split(".").pop()?.toLowerCase() ?? "";
-    if (["jpg", "jpeg", "png"].includes(ext))
-      return {
-        isImage: true,
-        icon: "image-outline" as const,
-        bg: "#F0FFF4",
-        color: "#16A34A",
-        label: ext.toUpperCase(),
-      };
-    if (ext === "pdf")
-      return {
-        isImage: false,
-        icon: "document-text-outline" as const,
-        bg: "#FEE2E2",
-        color: "#DC2626",
-        label: "PDF",
-      };
-    if (ext === "doc" || ext === "docx")
-      return {
-        isImage: false,
-        icon: "document-outline" as const,
-        bg: "#EEF4FF",
-        color: "#2563EB",
-        label: ext.toUpperCase(),
-      };
-    return {
-      isImage: false,
-      icon: "attach-outline" as const,
-      bg: "#F3F4F6",
-      color: "#6B7280",
-      label: "FILE",
-    };
-  }
-
-  function formatSubmitDate(d: string) {
-    if (!d) return "—";
-    const dt = new Date(d);
-    if (isNaN(dt.getTime())) return d;
-    return dt.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+  function openZoom(url: string, label: string) {
+    setImageViewerUrl(url);
+    setImageViewerLabel(label);
+    setImageViewerVisible(true);
   }
 
   if (loading) {
@@ -324,12 +383,16 @@ export default function TeacherHomeworkDetailScreen() {
   const fm = fileMeta(hw.homework);
   const ss = statusStyle(hw.status);
   const remaining = remainingLabel(hw.endDate);
+  const submittedList = roster.filter((r) => r.submitted);
+  const pendingList = roster.filter((r) => !r.submitted);
+  const total = roster.length;
+  const submittedPct =
+    total === 0 ? 0 : Math.round((submittedList.length / total) * 100);
 
   return (
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <StatusBar barStyle="light-content" backgroundColor="#1E40AF" />
 
-      {/* ── HEADER ── */}
       <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <View style={styles.headerTop}>
           <TouchableOpacity
@@ -347,11 +410,11 @@ export default function TeacherHomeworkDetailScreen() {
           </View>
         </View>
       </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
-        {/* ── HERO CARD ── */}
         <TouchableOpacity
           style={styles.heroCard}
           activeOpacity={0.85}
@@ -366,7 +429,6 @@ export default function TeacherHomeworkDetailScreen() {
               const resolved = resolveFileUrl(raw) || raw;
               const ext = (raw ?? "").split(".").pop()?.toLowerCase() ?? "";
               if (["pdf", "doc", "docx", "ppt", "pptx"].includes(ext)) {
-                // Google Docs Viewer renders PDF + Office files inline — no download needed
                 setPreviewHeaders(undefined);
                 setPreviewUrl(
                   `https://docs.google.com/viewer?url=${encodeURIComponent(resolved)}&embedded=true`,
@@ -414,7 +476,6 @@ export default function TeacherHomeworkDetailScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ── QUICK FACTS ── */}
         <View style={styles.factsRow}>
           <View style={styles.factCard}>
             <Ionicons name="hourglass-outline" size={18} color="#2563EB" />
@@ -433,7 +494,6 @@ export default function TeacherHomeworkDetailScreen() {
           </View>
         </View>
 
-        {/* ── TIMELINE ── */}
         <Text style={styles.sectionLabel}>Timeline</Text>
         <View style={styles.timelineCard}>
           <View
@@ -476,18 +536,10 @@ export default function TeacherHomeworkDetailScreen() {
                   {prettyDate(hw.endDate)}
                 </Text>
               </View>
-              <View style={styles.durationChip}>
-                <Ionicons name="time-outline" size={12} color="#2563EB" />
-                <Text style={styles.durationChipText}>
-                  {" "}
-                  {durationLabel(hw.startDate, hw.endDate)}
-                </Text>
-              </View>
             </View>
           </View>
         </View>
 
-        {/* ── DESCRIPTION ── */}
         <Text style={styles.sectionLabel}>Description</Text>
         <View style={styles.descCard}>
           {hw.description ? (
@@ -500,7 +552,6 @@ export default function TeacherHomeworkDetailScreen() {
           )}
         </View>
 
-        {/* ── STUDENT TASKS BUTTON ── */}
         <TouchableOpacity
           style={styles.tasksBtn}
           activeOpacity={0.85}
@@ -510,7 +561,6 @@ export default function TeacherHomeworkDetailScreen() {
           <Text style={styles.tasksBtnText}>View Student Tasks</Text>
         </TouchableOpacity>
 
-        {/* ── ACTION ── */}
         <TouchableOpacity
           style={styles.editAction}
           activeOpacity={0.85}
@@ -523,23 +573,22 @@ export default function TeacherHomeworkDetailScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* ── STUDENT TASKS MODAL ── */}
+      {/* STUDENT TASKS MODAL */}
       <Modal
         visible={tasksVisible}
         animationType="slide"
         onRequestClose={() => setTasksVisible(false)}
       >
         <SafeAreaView style={{ flex: 1, backgroundColor: "#F0F4FF" }}>
-          {/* Header */}
-          <View style={taskModal.header}>
+          <View style={tm.header}>
             <View style={{ flex: 1 }}>
-              <Text style={taskModal.headerTitle}>Student Tasks</Text>
-              <Text style={taskModal.headerSub} numberOfLines={1}>
+              <Text style={tm.headerTitle}>Student Tasks</Text>
+              <Text style={tm.headerSub} numberOfLines={1}>
                 {hw?.title ?? "Homework"}
               </Text>
             </View>
             <TouchableOpacity
-              style={taskModal.closeBtn}
+              style={tm.closeBtn}
               onPress={() => setTasksVisible(false)}
             >
               <Ionicons name="close" size={18} color="#374151" />
@@ -547,158 +596,322 @@ export default function TeacherHomeworkDetailScreen() {
           </View>
 
           {tasksLoading ? (
-            <View style={taskModal.center}>
+            <View style={tm.center}>
               <ActivityIndicator size="large" color="#2563EB" />
-              <Text style={taskModal.centerText}>Loading tasks…</Text>
-            </View>
-          ) : studentTasks.length === 0 ? (
-            <View style={taskModal.center}>
-              <Ionicons name="documents-outline" size={40} color="#D1D5DB" />
-              <Text style={taskModal.centerText}>No tasks submitted yet</Text>
+              <Text style={tm.centerText}>Loading students…</Text>
             </View>
           ) : (
-            <ScrollView
-              contentContainerStyle={taskModal.scroll}
-              showsVerticalScrollIndicator={false}
-            >
-              <Text style={taskModal.countLabel}>
-                {studentTasks.length} submission
-                {studentTasks.length !== 1 ? "s" : ""}
-              </Text>
+            <>
+              <View style={tm.progressCard}>
+                <View style={tm.progressTopRow}>
+                  <Text style={tm.progressTitle}>Submission progress</Text>
+                  <Text style={tm.progressPct}>{submittedPct}%</Text>
+                </View>
+                <View style={tm.progressTrack}>
+                  <View
+                    style={[tm.progressFill, { width: `${submittedPct}%` }]}
+                  />
+                </View>
+                <Text style={tm.progressMeta}>
+                  {submittedList.length} of {total} students submitted
+                </Text>
+              </View>
 
-              {studentTasks.map((task, idx) => {
-                const fs = taskFileStyle(task.task);
-                const url = resolveTaskUrl(task.task);
-                return (
-                  <View key={task.id} style={taskModal.card}>
-                    {/* Index badge */}
-                    <View style={taskModal.indexBadge}>
-                      <Text style={taskModal.indexText}>#{idx + 1}</Text>
+              <View style={tm.tabBar}>
+                <TouchableOpacity
+                  style={[tm.tab, activeTab === "submitted" && tm.tabActive]}
+                  onPress={() => setActiveTab("submitted")}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={15}
+                    color={activeTab === "submitted" ? "#16A34A" : "#9CA3AF"}
+                  />
+                  <Text
+                    style={[
+                      tm.tabText,
+                      activeTab === "submitted" && { color: "#111827" },
+                    ]}
+                  >
+                    Submitted
+                  </Text>
+                  <View
+                    style={[
+                      tm.tabCount,
+                      activeTab === "submitted" && {
+                        backgroundColor: "#DCFCE7",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        tm.tabCountText,
+                        activeTab === "submitted" && { color: "#16A34A" },
+                      ]}
+                    >
+                      {submittedList.length}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[tm.tab, activeTab === "pending" && tm.tabActive]}
+                  onPress={() => setActiveTab("pending")}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="time-outline"
+                    size={15}
+                    color={activeTab === "pending" ? "#DC2626" : "#9CA3AF"}
+                  />
+                  <Text
+                    style={[
+                      tm.tabText,
+                      activeTab === "pending" && { color: "#111827" },
+                    ]}
+                  >
+                    Not submitted
+                  </Text>
+                  <View
+                    style={[
+                      tm.tabCount,
+                      activeTab === "pending" && { backgroundColor: "#FEE2E2" },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        tm.tabCountText,
+                        activeTab === "pending" && { color: "#DC2626" },
+                      ]}
+                    >
+                      {pendingList.length}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                contentContainerStyle={tm.scroll}
+                showsVerticalScrollIndicator={false}
+              >
+                {activeTab === "submitted" ? (
+                  submittedList.length === 0 ? (
+                    <View style={tm.emptyBlock}>
+                      <Ionicons
+                        name="documents-outline"
+                        size={36}
+                        color="#D1D5DB"
+                      />
+                      <Text style={tm.emptyText}>No submissions yet</Text>
                     </View>
-
-                    {/* Image or file icon */}
-                    {fs.isImage && url ? (
+                  ) : (
+                    submittedList.map((entry) => (
                       <TouchableOpacity
-                        activeOpacity={0.9}
-                        onPress={() => {
-                          setImageViewerUrl(url);
-                          setImageViewerLabel(
-                            task.studentName ?? friendlyName(task.task, "Task", task.id),
-                          );
-                          setImageViewerVisible(true);
-                        }}
+                        key={entry.studentId}
+                        style={tm.studentRow}
+                        activeOpacity={0.7}
+                        onPress={() => setStudentDetail(entry)}
                       >
-                        <Image
-                          source={{ uri: url }}
-                          style={taskModal.taskImage}
-                          resizeMode="cover"
-                        />
-                        <View style={taskModal.zoomHint}>
-                          <Ionicons name="expand-outline" size={14} color="#fff" />
-                          <Text style={taskModal.zoomHintText}>Tap to zoom</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ) : (
-                      <View
-                        style={[
-                          taskModal.fileIconWrap,
-                          { backgroundColor: fs.bg },
-                        ]}
-                      >
-                        <Ionicons name={fs.icon} size={36} color={fs.color} />
                         <View
                           style={[
-                            taskModal.fileBadge,
-                            { backgroundColor: fs.color },
+                            tm.avatar,
+                            { backgroundColor: avatarColor(entry.name) },
                           ]}
                         >
-                          <Text style={taskModal.fileBadgeText}>
-                            {fs.label}
+                          <Text style={tm.avatarText}>
+                            {getInitials(entry.name)}
                           </Text>
                         </View>
-                      </View>
-                    )}
-
-                    {/* Meta row */}
-                    <View style={taskModal.meta}>
-                      <View style={taskModal.metaLeft}>
-                        {task.studentName ? (
-                          <Text style={taskModal.studentName}>
-                            {task.studentName}
-                          </Text>
-                        ) : null}
-                        <View style={taskModal.dateRow}>
-                          <Ionicons name="document-outline" size={12} color="#6B7280" />
-                          <Text style={taskModal.dateText}>
-                            {friendlyName(task.task, "Task", task.id)}
-                          </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={tm.studentName}>{entry.name}</Text>
+                          <View style={tm.rowMeta}>
+                            <Ionicons
+                              name="images-outline"
+                              size={12}
+                              color="#6B7280"
+                            />
+                            <Text style={tm.rowMetaText}>
+                              {entry.tasks.length} photo
+                              {entry.tasks.length !== 1 ? "s" : ""}
+                            </Text>
+                            <Text style={tm.dot}>·</Text>
+                            <Text style={tm.rowMetaText}>
+                              {formatSubmitDate(entry.submitDate ?? "")}
+                            </Text>
+                          </View>
                         </View>
-                        <View style={taskModal.dateRow}>
-                          <Ionicons
-                            name="calendar-outline"
-                            size={12}
-                            color="#6B7280"
-                          />
-                          <Text style={taskModal.dateText}>
-                            Submitted: {formatSubmitDate(task.submitDate)}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {url && !fs.isImage && (
-                        <TouchableOpacity
+                        <View
                           style={[
-                            taskModal.openBtn,
-                            { backgroundColor: fs.bg },
+                            tm.timingBadge,
+                            {
+                              backgroundColor: entry.onTime
+                                ? "#DCFCE7"
+                                : "#FEE2E2",
+                            },
                           ]}
-                          activeOpacity={0.8}
-                          onPress={() => {
-                            const ext =
-                              (task.task ?? "")
-                                .split(".")
-                                .pop()
-                                ?.toLowerCase() ?? "";
-                            if (
-                              ["pdf", "doc", "docx", "ppt", "pptx"].includes(
-                                ext,
-                              )
-                            ) {
-                              setPreviewHeaders(undefined);
-                              setPreviewUrl(
-                                `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`,
-                              );
-                            } else {
-                              setPreviewHeaders(undefined);
-                              setPreviewUrl(url);
-                            }
-                            setTasksVisible(false);
-                            setPreviewVisible(true);
-                          }}
                         >
-                          <Ionicons
-                            name="eye-outline"
-                            size={15}
-                            color={fs.color}
-                          />
                           <Text
-                            style={[taskModal.openBtnText, { color: fs.color }]}
+                            style={[
+                              tm.timingText,
+                              { color: entry.onTime ? "#16A34A" : "#DC2626" },
+                            ]}
                           >
-                            Preview
+                            {entry.onTime ? "On time" : "Late"}
                           </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
+                        </View>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color="#C7CDD6"
+                        />
+                      </TouchableOpacity>
+                    ))
+                  )
+                ) : pendingList.length === 0 ? (
+                  <View style={tm.emptyBlock}>
+                    <Ionicons
+                      name="checkmark-done-outline"
+                      size={36}
+                      color="#16A34A"
+                    />
+                    <Text style={tm.emptyText}>Everyone has submitted</Text>
                   </View>
-                );
-              })}
-
-              <View style={{ height: 40 }} />
-            </ScrollView>
+                ) : (
+                  pendingList.map((entry) => (
+                    <View key={entry.studentId} style={tm.studentRow}>
+                      <View style={[tm.avatar, { backgroundColor: "#E5E7EB" }]}>
+                        <Text style={[tm.avatarText, { color: "#9CA3AF" }]}>
+                          {getInitials(entry.name)}
+                        </Text>
+                      </View>
+                      <Text style={[tm.studentName, { flex: 1 }]}>
+                        {entry.name}
+                      </Text>
+                      <View style={tm.pendingBadge}>
+                        <Ionicons
+                          name="hourglass-outline"
+                          size={12}
+                          color="#D97706"
+                        />
+                        <Text style={tm.pendingBadgeText}>Pending</Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+                <View style={{ height: 30 }} />
+              </ScrollView>
+            </>
           )}
         </SafeAreaView>
       </Modal>
 
-      {/* ── ZOOMABLE IMAGE VIEWER ── */}
+      {/* PER-STUDENT GALLERY */}
+      <Modal
+        visible={!!studentDetail}
+        animationType="slide"
+        onRequestClose={() => setStudentDetail(null)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#F0F4FF" }}>
+          <View style={tm.header}>
+            <TouchableOpacity
+              style={[tm.closeBtn, { marginRight: 4 }]}
+              onPress={() => setStudentDetail(null)}
+            >
+              <Ionicons name="chevron-back" size={20} color="#374151" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={tm.headerTitle}>{studentDetail?.name}</Text>
+              <Text style={tm.headerSub}>
+                {studentDetail?.tasks.length} submission
+                {(studentDetail?.tasks.length ?? 0) !== 1 ? "s" : ""}
+                {studentDetail
+                  ? `  ·  ${studentDetail.onTime ? "On time" : "Late"}`
+                  : ""}
+              </Text>
+            </View>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={gallery.scroll}
+            showsVerticalScrollIndicator={false}
+          >
+            {studentDetail?.tasks.map((t, idx) => {
+              const url = resolveTaskUrl(t.task);
+              const late =
+                hw?.endDate && t.submitDate
+                  ? new Date(t.submitDate).getTime() >
+                    new Date(hw.endDate).getTime()
+                  : false;
+              return (
+                <View key={t.id} style={gallery.card}>
+                  <View style={gallery.cardHead}>
+                    <View style={gallery.indexCircle}>
+                      <Text style={gallery.indexText}>{idx + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={gallery.cardDate}>
+                        {formatSubmitDate(t.submitDate)}
+                      </Text>
+                      <Text style={gallery.cardSub}>Submission #{idx + 1}</Text>
+                    </View>
+                    <View
+                      style={[
+                        gallery.cardBadge,
+                        { backgroundColor: late ? "#FEE2E2" : "#DCFCE7" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          gallery.cardBadgeText,
+                          { color: late ? "#DC2626" : "#16A34A" },
+                        ]}
+                      >
+                        {late ? "Late" : "On time"}
+                      </Text>
+                    </View>
+                  </View>
+                  {url ? (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() =>
+                        openZoom(url, `${studentDetail?.name} · #${idx + 1}`)
+                      }
+                    >
+                      <Image
+                        source={{ uri: url }}
+                        style={gallery.image}
+                        resizeMode="cover"
+                      />
+                      <View style={gallery.zoomHint}>
+                        <Ionicons
+                          name="expand-outline"
+                          size={14}
+                          color="#fff"
+                        />
+                        <Text style={gallery.zoomHintText}>Tap to zoom</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={gallery.imagePlaceholder}>
+                      <Ionicons
+                        name="image-outline"
+                        size={32}
+                        color="#D1D5DB"
+                      />
+                      <Text style={gallery.placeholderText}>
+                        Image unavailable
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+            <View style={{ height: 30 }} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* ZOOM VIEWER */}
       <Modal
         visible={imageViewerVisible}
         animationType="fade"
@@ -717,7 +930,6 @@ export default function TeacherHomeworkDetailScreen() {
               <Ionicons name="close" size={22} color="#fff" />
             </TouchableOpacity>
           </View>
-
           {imageViewerUrl ? (
             <ScrollView
               style={{ flex: 1 }}
@@ -739,11 +951,11 @@ export default function TeacherHomeworkDetailScreen() {
               <Text style={{ color: "#fff" }}>No image available</Text>
             </View>
           )}
-
           <Text style={imageViewer.hint}>Pinch to zoom · Drag to pan</Text>
         </View>
       </Modal>
 
+      {/* FILE PREVIEW */}
       <Modal
         visible={previewVisible}
         animationType="slide"
@@ -814,7 +1026,6 @@ export default function TeacherHomeworkDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F0F4FF" },
-
   header: {
     backgroundColor: "#1E40AF",
     paddingHorizontal: 20,
@@ -842,7 +1053,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginTop: 1,
   },
-
   loadingWrap: {
     flex: 1,
     alignItems: "center",
@@ -850,10 +1060,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: { fontSize: 14, color: "#6B7280" },
-
   scroll: { paddingHorizontal: 16, paddingTop: 16 },
-
-  /* Hero */
   heroCard: {
     backgroundColor: "#fff",
     borderRadius: 20,
@@ -907,8 +1114,6 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusBadgeText: { fontSize: 11, fontWeight: "700" },
-
-  /* Quick facts */
   factsRow: { flexDirection: "row", gap: 12, marginBottom: 6 },
   factCard: {
     flex: 1,
@@ -939,7 +1144,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   factPillText: { fontSize: 13, fontWeight: "800" },
-
   sectionLabel: {
     fontSize: 12,
     fontWeight: "800",
@@ -949,31 +1153,6 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 10,
   },
-
-  /* Info card */
-  infoCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#EEF2FF",
-  },
-  infoIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: "#EEF4FF",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  infoTitle: { fontSize: 15, fontWeight: "800", color: "#111827" },
-  infoMetaRow: { flexDirection: "row", alignItems: "center", marginTop: 3 },
-  infoMeta: { fontSize: 12, color: "#6B7280" },
-
-  /* Timeline */
   timelineCard: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -983,30 +1162,8 @@ const styles = StyleSheet.create({
   },
   timelineRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   timelineDot: { width: 12, height: 12, borderRadius: 6 },
-  timelineConnector: {
-    width: 2,
-    height: 22,
-    backgroundColor: "#E5E7EB",
-    marginLeft: 5,
-    marginVertical: 2,
-  },
   timelineLabel: { fontSize: 11, color: "#9CA3AF", fontWeight: "600" },
-  timelineValue: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  durationChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EEF4FF",
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  durationChipText: { fontSize: 11, fontWeight: "700", color: "#2563EB" },
-
-  /* Description */
+  timelineValue: { fontSize: 14, fontWeight: "700", color: "#111827" },
   descCard: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -1017,8 +1174,6 @@ const styles = StyleSheet.create({
   descText: { fontSize: 14, color: "#374151", lineHeight: 22 },
   descEmpty: { alignItems: "center", paddingVertical: 8, gap: 6 },
   descEmptyText: { fontSize: 13, color: "#9CA3AF" },
-
-  /* Student tasks button */
   tasksBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1030,8 +1185,6 @@ const styles = StyleSheet.create({
     marginTop: 22,
   },
   tasksBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
-
-  /* Action */
   editAction: {
     flexDirection: "row",
     alignItems: "center",
@@ -1045,16 +1198,16 @@ const styles = StyleSheet.create({
   editActionText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });
 
-const taskModal = StyleSheet.create({
+const tm = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
-    gap: 12,
+    gap: 10,
   },
   headerTitle: { fontSize: 17, fontWeight: "800", color: "#111827" },
   headerSub: { fontSize: 11, color: "#6B7280", marginTop: 1 },
@@ -1066,20 +1219,123 @@ const taskModal = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   centerText: { fontSize: 14, color: "#9CA3AF" },
-
-  scroll: { paddingHorizontal: 16, paddingTop: 14 },
-  countLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#6B7280",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+  progressCard: {
+    backgroundColor: "#fff",
+    margin: 16,
     marginBottom: 12,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
+  progressTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  progressTitle: { fontSize: 13, fontWeight: "700", color: "#374151" },
+  progressPct: { fontSize: 18, fontWeight: "900", color: "#2563EB" },
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EEF2FF",
+    overflow: "hidden",
+  },
+  progressFill: { height: 8, borderRadius: 4, backgroundColor: "#16A34A" },
+  progressMeta: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginTop: 8,
+    fontWeight: "600",
+  },
+  tabBar: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    backgroundColor: "#E8EDF5",
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 10,
+    borderRadius: 9,
+  },
+  tabActive: {
+    backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  tabText: { fontSize: 12.5, fontWeight: "700", color: "#9CA3AF" },
+  tabCount: {
+    minWidth: 20,
+    paddingHorizontal: 5,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#D1D9E6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  tabCountText: { fontSize: 10, fontWeight: "800", color: "#6B7280" },
+  scroll: { paddingHorizontal: 16, paddingTop: 14 },
+  emptyBlock: { alignItems: "center", paddingTop: 50, gap: 10 },
+  emptyText: { fontSize: 14, color: "#9CA3AF", fontWeight: "600" },
+  studentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  avatarText: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  studentName: { fontSize: 14, fontWeight: "700", color: "#111827" },
+  rowMeta: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 },
+  rowMetaText: { fontSize: 11, color: "#6B7280" },
+  dot: { fontSize: 11, color: "#D1D5DB", marginHorizontal: 1 },
+  timingBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    flexShrink: 0,
+  },
+  timingText: { fontSize: 10.5, fontWeight: "800" },
+  pendingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9,
+  },
+  pendingBadgeText: { fontSize: 11, fontWeight: "800", color: "#D97706" },
+});
 
+const gallery = StyleSheet.create({
+  scroll: { padding: 16 },
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -1087,25 +1343,28 @@ const taskModal = StyleSheet.create({
     borderColor: "#E5E7EB",
     marginBottom: 14,
     overflow: "hidden",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
   },
-  indexBadge: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    zIndex: 2,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+  cardHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  indexText: { fontSize: 11, fontWeight: "800", color: "#fff" },
-
-  taskImage: { width: "100%", height: 200 },
+  indexCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#EEF4FF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  indexText: { fontSize: 13, fontWeight: "800", color: "#2563EB" },
+  cardDate: { fontSize: 13, fontWeight: "700", color: "#111827" },
+  cardSub: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
+  cardBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
+  cardBadgeText: { fontSize: 10.5, fontWeight: "800" },
+  image: { width: "100%", height: 280 },
   zoomHint: {
     position: "absolute",
     bottom: 10,
@@ -1119,40 +1378,14 @@ const taskModal = StyleSheet.create({
     borderRadius: 8,
   },
   zoomHintText: { fontSize: 10, fontWeight: "700", color: "#fff" },
-
-  fileIconWrap: {
-    width: "100%",
-    height: 140,
+  imagePlaceholder: {
+    height: 180,
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
+    backgroundColor: "#F9FAFB",
+    gap: 8,
   },
-  fileBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
-  fileBadgeText: { fontSize: 11, fontWeight: "800", color: "#fff" },
-
-  meta: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-    gap: 10,
-  },
-  metaLeft: { flex: 1, gap: 3 },
-  studentName: { fontSize: 13, fontWeight: "700", color: "#111827" },
-  dateRow: { flexDirection: "row", alignItems: "center", gap: 5 },
-  dateText: { fontSize: 12, color: "#6B7280" },
-
-  openBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  openBtnText: { fontSize: 12, fontWeight: "700" },
+  placeholderText: { fontSize: 12, color: "#9CA3AF" },
 });
 
 const SCREEN = Dimensions.get("window");
@@ -1181,10 +1414,7 @@ const imageViewer = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  image: {
-    width: SCREEN.width,
-    height: SCREEN.height * 0.75,
-  },
+  image: { width: SCREEN.width, height: SCREEN.height * 0.75 },
   hint: {
     position: "absolute",
     bottom: 24,

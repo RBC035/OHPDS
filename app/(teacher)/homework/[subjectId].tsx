@@ -1,25 +1,28 @@
-import React, { useState, useEffect, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  StatusBar,
-  ActivityIndicator,
-} from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
-import * as DocumentPicker from "expo-document-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { HomeworkService, HomeworkPayload } from "../../../services/api/homeworkService";
+import * as DocumentPicker from "expo-document-picker";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { ClassService } from "../../../services/api/classService";
+import { HomeworkService } from "../../../services/api/homeworkService";
 import { StudentClassService } from "../../../services/api/studentClassService";
 
 type FileAsset = { uri: string; name: string; type: string };
@@ -54,12 +57,32 @@ const PALETTE = [
 function fileMeta(path: string) {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   if (ext === "pdf")
-    return { icon: "document-text" as const, color: "#DC2626", bg: "#FEE2E2", label: "PDF" };
+    return {
+      icon: "document-text" as const,
+      color: "#DC2626",
+      bg: "#FEE2E2",
+      label: "PDF",
+    };
   if (ext === "ppt" || ext === "pptx")
-    return { icon: "easel" as const, color: "#EA580C", bg: "#FFF1E6", label: ext.toUpperCase() };
+    return {
+      icon: "easel" as const,
+      color: "#EA580C",
+      bg: "#FFF1E6",
+      label: ext.toUpperCase(),
+    };
   if (ext === "doc" || ext === "docx")
-    return { icon: "document" as const, color: "#2563EB", bg: "#EEF4FF", label: ext.toUpperCase() };
-  return { icon: "attach" as const, color: "#6B7280", bg: "#F3F4F6", label: "FILE" };
+    return {
+      icon: "document" as const,
+      color: "#2563EB",
+      bg: "#EEF4FF",
+      label: ext.toUpperCase(),
+    };
+  return {
+    icon: "attach" as const,
+    color: "#6B7280",
+    bg: "#F3F4F6",
+    label: "FILE",
+  };
 }
 
 function statusStyle(status?: string) {
@@ -90,7 +113,8 @@ function validateHomeworkFile(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return "File path is required.";
   const ext = trimmed.split(".").pop()?.toLowerCase() ?? "";
-  if (!ALLOWED_EXTENSIONS.includes(ext)) return `Only allowed: ${ALLOWED_EXTENSIONS.join(", ")}`;
+  if (!ALLOWED_EXTENSIONS.includes(ext))
+    return `Only allowed: ${ALLOWED_EXTENSIONS.join(", ")}`;
   return null;
 }
 
@@ -108,14 +132,20 @@ function parseDate(s: string): Date {
 function formatDisplayDate(s: string): string {
   if (!s) return "";
   const dt = parseDate(s);
-  return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return dt.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export default function TeacherHomeworkListScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ subjectId: string; name?: string }>();
   const subjectId = parseInt(params.subjectId, 10);
-  const subjectName = params.name ? decodeURIComponent(params.name) : `Subject #${subjectId}`;
+  const subjectName = params.name
+    ? decodeURIComponent(params.name)
+    : `Subject #${subjectId}`;
 
   const [homeworkList, setHomeworkList] = useState<Homework[]>([]);
   const [classCatalog, setClassCatalog] = useState<ClassItem[]>([]);
@@ -137,7 +167,7 @@ export default function TeacherHomeworkListScreen() {
   const [classDropOpen, setClassDropOpen] = useState(false);
   const [classSearch, setClassSearch] = useState("");
   const [showStartPicker, setShowStartPicker] = useState(false);
-  const [showEndPicker,   setShowEndPicker]   = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
 
   // ── Loaders ──────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -159,15 +189,21 @@ export default function TeacherHomeworkListScreen() {
           try {
             const r = await StudentClassService.getByClass(c.id);
             const arr: any[] = r.data?.data ?? r.data ?? [];
-            return [String(c.id), Array.isArray(arr) ? arr.length : 0] as [string, number];
+            return [String(c.id), Array.isArray(arr) ? arr.length : 0] as [
+              string,
+              number,
+            ];
           } catch {
             return [String(c.id), 0] as [string, number];
           }
-        })
+        }),
       );
       setClassCounts(Object.fromEntries(counts));
     } catch (e: any) {
-      Alert.alert("Error", e?.response?.data?.message ?? "Failed to load homework.");
+      Alert.alert(
+        "Error",
+        e?.response?.data?.message ?? "Failed to load homework.",
+      );
     } finally {
       setLoading(false);
     }
@@ -181,7 +217,11 @@ export default function TeacherHomeworkListScreen() {
   const classNameMap = new Map(classCatalog.map((c) => [String(c.id), c.name]));
 
   function resolvedClassName(hw: Homework) {
-    return hw.className || classNameMap.get(String(hw.classId)) || `Class #${hw.classId}`;
+    return (
+      hw.className ||
+      classNameMap.get(String(hw.classId)) ||
+      `Class #${hw.classId}`
+    );
   }
 
   function classCountLabel(id: number | string) {
@@ -211,11 +251,17 @@ export default function TeacherHomeworkListScreen() {
     setEditing(hw);
     setFormTitle(hw.title ?? "");
     setFormHomework(null); // can't restore uploaded file from server
-    setFormClassId(classCatalog.find((c) => String(c.id) === String(hw.classId)) ?? null);
+    setFormClassId(
+      classCatalog.find((c) => String(c.id) === String(hw.classId)) ?? null,
+    );
     setFormStartDate(hw.startDate ?? today());
     setFormEndDate(hw.endDate ?? "");
     setFormDescription(hw.description ?? "");
-    setFormStatus((hw.status === "Inactive" ? "Inactive" : "Active") as "Active" | "Inactive");
+    setFormStatus(
+      (hw.status === "Inactive" ? "Inactive" : "Active") as
+        | "Active"
+        | "Inactive",
+    );
     setClassDropOpen(false);
     setClassSearch("");
     setShowStartPicker(false);
@@ -225,30 +271,34 @@ export default function TeacherHomeworkListScreen() {
 
   function openDetail(hw: Homework) {
     router.push(
-      `/(teacher)/homework/view/${hw.id}?subject=${encodeURIComponent(subjectName)}` as any
+      `/(teacher)/homework/view/${hw.id}?subject=${encodeURIComponent(subjectName)}` as any,
     );
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
   async function handleSave() {
-    if (!formTitle.trim()) return Alert.alert("Required", "Please enter a homework title.");
-    if (!formClassId)      return Alert.alert("Required", "Please select a class.");
-    if (!formStartDate.trim()) return Alert.alert("Required", "Please enter a start date.");
-    if (!formEndDate.trim())   return Alert.alert("Required", "Please enter an end date.");
+    if (!formTitle.trim())
+      return Alert.alert("Required", "Please enter a homework title.");
+    if (!formClassId) return Alert.alert("Required", "Please select a class.");
+    if (!formStartDate.trim())
+      return Alert.alert("Required", "Please enter a start date.");
+    if (!formEndDate.trim())
+      return Alert.alert("Required", "Please enter an end date.");
     // File required for new homework; optional when editing (keep existing if none chosen)
-    if (!editing && !formHomework) return Alert.alert("Required", "Please attach a homework file.");
+    if (!editing && !formHomework)
+      return Alert.alert("Required", "Please attach a homework file.");
 
     const fd = new FormData();
-    fd.append("subjectId",   String(subjectId));
-    fd.append("classId",     String(formClassId.id));
-    fd.append("title",       formTitle.trim());
-    fd.append("startDate",   formStartDate.trim());
-    fd.append("endDate",     formEndDate.trim());
+    fd.append("subjectId", String(subjectId));
+    fd.append("classId", String(formClassId.id));
+    fd.append("title", formTitle.trim());
+    fd.append("startDate", formStartDate.trim());
+    fd.append("endDate", formEndDate.trim());
     fd.append("description", formDescription.trim());
-    fd.append("status",      formStatus);
+    fd.append("status", formStatus);
     if (formHomework) {
       fd.append("homework", {
-        uri:  formHomework.uri,
+        uri: formHomework.uri,
         name: formHomework.name,
         type: formHomework.type,
       } as any);
@@ -256,12 +306,18 @@ export default function TeacherHomeworkListScreen() {
 
     try {
       setSaving(true);
-      if (editing) await HomeworkService.update(Number(editing.id), fd);
-      else         await HomeworkService.create(fd);
+      // if (editing) await HomeworkService.update(Number(editing.id), fd);
+      // else         await HomeworkService.create(fd);
+      if (editing) await HomeworkService.updateRaw(Number(editing.id), fd);
+      else await HomeworkService.createRaw(fd);
       setModalVisible(false);
       await loadData();
     } catch (e: any) {
-      Alert.alert("Error", e?.response?.data?.message ?? "Failed to save homework.");
+      console.log("HW SAVE ERROR:", e?.response?.status, e?.response?.data);
+      Alert.alert(
+        "Error",
+        e?.response?.data?.message ?? "Failed to save homework.",
+      );
     } finally {
       setSaving(false);
     }
@@ -269,32 +325,39 @@ export default function TeacherHomeworkListScreen() {
 
   // ── Delete ────────────────────────────────────────────────────────────────
   function handleDelete(hw: Homework) {
-    Alert.alert("Delete homework", `Remove "${hw.title || hw.homework}"? This cannot be undone.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await HomeworkService.remove(Number(hw.id));
-            await loadData();
-          } catch (e: any) {
-            Alert.alert("Error", e?.response?.data?.message ?? "Failed to delete homework.");
-          }
+    Alert.alert(
+      "Delete homework",
+      `Remove "${hw.title || hw.homework}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await HomeworkService.remove(Number(hw.id));
+              await loadData();
+            } catch (e: any) {
+              Alert.alert(
+                "Error",
+                e?.response?.data?.message ?? "Failed to delete homework.",
+              );
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const filteredClasses = classCatalog.filter((c) =>
-    c.name.toLowerCase().includes(classSearch.toLowerCase())
+    c.name.toLowerCase().includes(classSearch.toLowerCase()),
   );
   const activeCount = homeworkList.filter(
-    (h) => (h.status ?? "Active").toLowerCase() === "active"
+    (h) => (h.status ?? "Active").toLowerCase() === "active",
   ).length;
   const inactiveCount = homeworkList.filter(
-    (h) => (h.status ?? "").toLowerCase() === "inactive"
+    (h) => (h.status ?? "").toLowerCase() === "inactive",
   ).length;
 
   return (
@@ -304,7 +367,11 @@ export default function TeacherHomeworkListScreen() {
       {/* ── HEADER ── */}
       <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            activeOpacity={0.8}
+          >
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
@@ -313,7 +380,11 @@ export default function TeacherHomeworkListScreen() {
             </Text>
             <Text style={styles.headerSub}>Homework management</Text>
           </View>
-          <TouchableOpacity style={styles.addBtn} onPress={openAdd} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={openAdd}
+            activeOpacity={0.85}
+          >
             <Ionicons name="add" size={22} color="#1E40AF" />
           </TouchableOpacity>
         </View>
@@ -343,14 +414,19 @@ export default function TeacherHomeworkListScreen() {
           <Text style={styles.loadingText}>Loading homework...</Text>
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scroll}
+        >
           {homeworkList.length === 0 && (
             <View style={styles.emptyState}>
               <View style={styles.emptyIcon}>
                 <Ionicons name="clipboard-outline" size={32} color="#9CA3AF" />
               </View>
               <Text style={styles.emptyTitle}>No homework yet</Text>
-              <Text style={styles.emptySub}>Tap + to add the first homework for this subject</Text>
+              <Text style={styles.emptySub}>
+                Tap + to add the first homework for this subject
+              </Text>
             </View>
           )}
 
@@ -365,11 +441,19 @@ export default function TeacherHomeworkListScreen() {
                 activeOpacity={0.85}
                 onPress={() => openDetail(hw)}
               >
-                <View style={[styles.colorBar, { backgroundColor: fm.color }]} />
+                <View
+                  style={[styles.colorBar, { backgroundColor: fm.color }]}
+                />
                 <View style={styles.cardInner}>
                   <View style={[styles.fileIcon, { backgroundColor: fm.bg }]}>
-                    <Ionicons name={`${fm.icon}-outline` as any} size={22} color={fm.color} />
-                    <Text style={[styles.fileBadge, { color: fm.color }]}>{fm.label}</Text>
+                    <Ionicons
+                      name={`${fm.icon}-outline` as any}
+                      size={22}
+                      color={fm.color}
+                    />
+                    <Text style={[styles.fileBadge, { color: fm.color }]}>
+                      {fm.label}
+                    </Text>
                   </View>
 
                   <View style={{ flex: 1 }}>
@@ -378,10 +462,19 @@ export default function TeacherHomeworkListScreen() {
                     </Text>
 
                     <View style={styles.hwMeta}>
-                      <Ionicons name="school-outline" size={11} color="#9CA3AF" />
-                      <Text style={styles.hwMetaText}> {resolvedClassName(hw)}</Text>
+                      <Ionicons
+                        name="school-outline"
+                        size={11}
+                        color="#9CA3AF"
+                      />
+                      <Text style={styles.hwMetaText}>
+                        {" "}
+                        {resolvedClassName(hw)}
+                      </Text>
                       <Text style={styles.metaDot}>·</Text>
-                      <View style={[styles.statusPill, { backgroundColor: ss.bg }]}>
+                      <View
+                        style={[styles.statusPill, { backgroundColor: ss.bg }]}
+                      >
                         <Text style={[styles.statusText, { color: ss.color }]}>
                           {hw.status ?? "Active"}
                         </Text>
@@ -389,7 +482,11 @@ export default function TeacherHomeworkListScreen() {
                     </View>
 
                     <View style={styles.hwDates}>
-                      <Ionicons name="calendar-outline" size={11} color="#9CA3AF" />
+                      <Ionicons
+                        name="calendar-outline"
+                        size={11}
+                        color="#9CA3AF"
+                      />
                       <Text style={styles.hwMetaText}> {hw.startDate}</Text>
                       <Ionicons
                         name="arrow-forward-outline"
@@ -400,7 +497,11 @@ export default function TeacherHomeworkListScreen() {
                       <Text style={styles.hwMetaText}>{hw.endDate}</Text>
                       {dur ? (
                         <View style={styles.durationPill}>
-                          <Ionicons name="time-outline" size={10} color="#2563EB" />
+                          <Ionicons
+                            name="time-outline"
+                            size={10}
+                            color="#2563EB"
+                          />
                           <Text style={styles.durationText}> {dur}</Text>
                         </View>
                       ) : null}
@@ -418,7 +519,11 @@ export default function TeacherHomeworkListScreen() {
                         onPress={() => openEdit(hw)}
                         activeOpacity={0.75}
                       >
-                        <Ionicons name="create-outline" size={14} color="#2563EB" />
+                        <Ionicons
+                          name="create-outline"
+                          size={14}
+                          color="#2563EB"
+                        />
                         <Text style={styles.editBtnText}>Edit</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -426,12 +531,20 @@ export default function TeacherHomeworkListScreen() {
                         onPress={() => handleDelete(hw)}
                         activeOpacity={0.75}
                       >
-                        <Ionicons name="trash-outline" size={14} color="#DC2626" />
+                        <Ionicons
+                          name="trash-outline"
+                          size={14}
+                          color="#DC2626"
+                        />
                       </TouchableOpacity>
                       <View style={{ flex: 1 }} />
                       <View style={styles.openHint}>
                         <Text style={styles.openHintText}>Details</Text>
-                        <Ionicons name="chevron-forward" size={13} color="#9CA3AF" />
+                        <Ionicons
+                          name="chevron-forward"
+                          size={13}
+                          color="#9CA3AF"
+                        />
                       </View>
                     </View>
                   </View>
@@ -464,15 +577,23 @@ export default function TeacherHomeworkListScreen() {
             <View style={styles.handle} />
             <View style={styles.sheetHeader}>
               <View>
-                <Text style={styles.sheetTitle}>{editing ? "Edit homework" : "Add homework"}</Text>
+                <Text style={styles.sheetTitle}>
+                  {editing ? "Edit homework" : "Add homework"}
+                </Text>
                 <Text style={styles.sheetSub}>{subjectName}</Text>
               </View>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
+              <TouchableOpacity
+                onPress={() => setModalVisible(false)}
+                style={styles.closeBtn}
+              >
                 <Ionicons name="close" size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               {/* Title */}
               <Text style={styles.label}>
                 Title <Text style={styles.required}>*</Text>
@@ -490,10 +611,17 @@ export default function TeacherHomeworkListScreen() {
               <Text style={styles.label}>
                 Homework file <Text style={styles.optional}>(optional)</Text>
               </Text>
-              <Text style={styles.hint}>Allowed: .pdf  .doc  .docx  .ppt  .pptx</Text>
+              <Text style={styles.hint}>
+                Allowed: .pdf .doc .docx .ppt .pptx
+              </Text>
 
               {formHomework ? (
-                <View style={[styles.filePreview, { borderColor: fileMeta(formHomework.name).bg }]}>
+                <View
+                  style={[
+                    styles.filePreview,
+                    { borderColor: fileMeta(formHomework.name).bg },
+                  ]}
+                >
                   <View
                     style={[
                       styles.filePreviewIcon,
@@ -501,7 +629,9 @@ export default function TeacherHomeworkListScreen() {
                     ]}
                   >
                     <Ionicons
-                      name={`${fileMeta(formHomework.name).icon}-outline` as any}
+                      name={
+                        `${fileMeta(formHomework.name).icon}-outline` as any
+                      }
                       size={22}
                       color={fileMeta(formHomework.name).color}
                     />
@@ -510,11 +640,19 @@ export default function TeacherHomeworkListScreen() {
                     <Text style={styles.filePreviewName} numberOfLines={1}>
                       {formHomework.name}
                     </Text>
-                    <Text style={[styles.filePreviewSub, { color: fileMeta(formHomework.name).color }]}>
+                    <Text
+                      style={[
+                        styles.filePreviewSub,
+                        { color: fileMeta(formHomework.name).color },
+                      ]}
+                    >
                       {fileMeta(formHomework.name).label} · file selected
                     </Text>
                   </View>
-                  <TouchableOpacity onPress={() => setFormHomework(null)} style={styles.fileClearBtn}>
+                  <TouchableOpacity
+                    onPress={() => setFormHomework(null)}
+                    style={styles.fileClearBtn}
+                  >
                     <Ionicons name="close-circle" size={20} color="#9CA3AF" />
                   </TouchableOpacity>
                 </View>
@@ -525,26 +663,30 @@ export default function TeacherHomeworkListScreen() {
                   onPress={async () => {
                     try {
                       const result = await DocumentPicker.getDocumentAsync({
-                        type: [
-                          "application/pdf",
-                          "application/msword",
-                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                          "application/vnd.ms-powerpoint",
-                          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                        ],
+                        // type: [
+                        //   "application/pdf",
+                        //   "application/msword",
+                        //   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        //   "application/vnd.ms-powerpoint",
+                        //   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        // ],
+                        type: "*/*",
                         copyToCacheDirectory: true,
                         multiple: false,
                       });
                       if (!result.canceled && result.assets?.length > 0) {
                         const asset = result.assets[0];
-                        const name  = asset.name ?? "";
-                        const ext   = name.split(".").pop()?.toLowerCase() ?? "";
+                        const name = asset.name ?? "";
+                        const ext = name.split(".").pop()?.toLowerCase() ?? "";
                         if (!ALLOWED_EXTENSIONS.includes(ext)) {
-                          Alert.alert("Invalid file", `Only allowed: ${ALLOWED_EXTENSIONS.join(", ")}`);
+                          Alert.alert(
+                            "Invalid file",
+                            `Only allowed: ${ALLOWED_EXTENSIONS.join(", ")}`,
+                          );
                           return;
                         }
                         setFormHomework({
-                          uri:  asset.uri,
+                          uri: asset.uri,
                           name: asset.name ?? "",
                           type: asset.mimeType ?? "application/octet-stream",
                         });
@@ -555,11 +697,19 @@ export default function TeacherHomeworkListScreen() {
                   }}
                 >
                   <View style={styles.filePickerIcon}>
-                    <Ionicons name="cloud-upload-outline" size={24} color="#2563EB" />
+                    <Ionicons
+                      name="cloud-upload-outline"
+                      size={24}
+                      color="#2563EB"
+                    />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.filePickerTitle}>Tap to select file</Text>
-                    <Text style={styles.filePickerSub}>PDF, DOC, DOCX, PPT, PPTX</Text>
+                    <Text style={styles.filePickerTitle}>
+                      Tap to select file
+                    </Text>
+                    <Text style={styles.filePickerSub}>
+                      PDF, DOC, DOCX, PPT, PPTX
+                    </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
                 </TouchableOpacity>
@@ -581,7 +731,12 @@ export default function TeacherHomeworkListScreen() {
                 onPress={() => setClassDropOpen((v) => !v)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.selectFieldText, !formClassId && { color: "#9CA3AF" }]}>
+                <Text
+                  style={[
+                    styles.selectFieldText,
+                    !formClassId && { color: "#9CA3AF" },
+                  ]}
+                >
                   {formClassId
                     ? `${formClassId.name}  ·  ${classCountLabel(formClassId.id)}`
                     : "Select a class..."}
@@ -594,7 +749,9 @@ export default function TeacherHomeworkListScreen() {
               </TouchableOpacity>
 
               {classDropOpen && (
-                <View style={[styles.selectDropdown, { borderColor: "#2563EB" }]}>
+                <View
+                  style={[styles.selectDropdown, { borderColor: "#2563EB" }]}
+                >
                   <View style={styles.dropSearchWrap}>
                     <Ionicons
                       name="search-outline"
@@ -612,7 +769,11 @@ export default function TeacherHomeworkListScreen() {
                     />
                     {classSearch.length > 0 && (
                       <TouchableOpacity onPress={() => setClassSearch("")}>
-                        <Ionicons name="close-circle" size={14} color="#9CA3AF" />
+                        <Ionicons
+                          name="close-circle"
+                          size={14}
+                          color="#9CA3AF"
+                        />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -627,7 +788,10 @@ export default function TeacherHomeworkListScreen() {
                       return (
                         <TouchableOpacity
                           key={String(cls.id)}
-                          style={[styles.selectOption, isSelected && { backgroundColor: "#EEF4FF" }]}
+                          style={[
+                            styles.selectOption,
+                            isSelected && { backgroundColor: "#EEF4FF" },
+                          ]}
                           onPress={() => {
                             setFormClassId(cls);
                             setClassDropOpen(false);
@@ -635,8 +799,18 @@ export default function TeacherHomeworkListScreen() {
                           }}
                           activeOpacity={0.8}
                         >
-                          <View style={[styles.selectDot, { backgroundColor: av.bg }]}>
-                            <Text style={[styles.selectDotText, { color: av.color }]}>
+                          <View
+                            style={[
+                              styles.selectDot,
+                              { backgroundColor: av.bg },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.selectDotText,
+                                { color: av.color },
+                              ]}
+                            >
                               {cls.name
                                 .split(" ")
                                 .map((w) => w[0])
@@ -649,18 +823,32 @@ export default function TeacherHomeworkListScreen() {
                             <Text
                               style={[
                                 styles.selectOptionText,
-                                isSelected && { color: "#2563EB", fontWeight: "700" },
+                                isSelected && {
+                                  color: "#2563EB",
+                                  fontWeight: "700",
+                                },
                               ]}
                             >
                               {cls.name}
                             </Text>
                             <View style={styles.selectOptionMetaRow}>
-                              <Ionicons name="people-outline" size={11} color="#9CA3AF" />
-                              <Text style={styles.selectOptionMeta}> {classCountLabel(cls.id)}</Text>
+                              <Ionicons
+                                name="people-outline"
+                                size={11}
+                                color="#9CA3AF"
+                              />
+                              <Text style={styles.selectOptionMeta}>
+                                {" "}
+                                {classCountLabel(cls.id)}
+                              </Text>
                             </View>
                           </View>
                           {isSelected && (
-                            <Ionicons name="checkmark-circle" size={18} color="#2563EB" />
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={18}
+                              color="#2563EB"
+                            />
                           )}
                         </TouchableOpacity>
                       );
@@ -678,13 +866,22 @@ export default function TeacherHomeworkListScreen() {
               <TouchableOpacity
                 style={styles.dateField}
                 activeOpacity={0.8}
-                onPress={() => { setShowEndPicker(false); setShowStartPicker(v => !v); }}
+                onPress={() => {
+                  setShowEndPicker(false);
+                  setShowStartPicker((v) => !v);
+                }}
               >
                 <Ionicons name="calendar-outline" size={16} color="#2563EB" />
                 <Text style={styles.dateFieldText}>
-                  {formStartDate ? formatDisplayDate(formStartDate) : "Select start date"}
+                  {formStartDate
+                    ? formatDisplayDate(formStartDate)
+                    : "Select start date"}
                 </Text>
-                <Ionicons name={showStartPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" />
+                <Ionicons
+                  name={showStartPicker ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color="#9CA3AF"
+                />
               </TouchableOpacity>
 
               {showStartPicker && (
@@ -703,7 +900,8 @@ export default function TeacherHomeworkListScreen() {
                     display={Platform.OS === "ios" ? "spinner" : "default"}
                     onChange={(event, date) => {
                       if (Platform.OS === "android") setShowStartPicker(false);
-                      if (date) setFormStartDate(date.toISOString().split("T")[0]);
+                      if (date)
+                        setFormStartDate(date.toISOString().split("T")[0]);
                     }}
                   />
                 </View>
@@ -716,13 +914,27 @@ export default function TeacherHomeworkListScreen() {
               <TouchableOpacity
                 style={styles.dateField}
                 activeOpacity={0.8}
-                onPress={() => { setShowStartPicker(false); setShowEndPicker(v => !v); }}
+                onPress={() => {
+                  setShowStartPicker(false);
+                  setShowEndPicker((v) => !v);
+                }}
               >
                 <Ionicons name="flag-outline" size={16} color="#EA580C" />
-                <Text style={[styles.dateFieldText, !formEndDate && { color: "#9CA3AF" }]}>
-                  {formEndDate ? formatDisplayDate(formEndDate) : "Select end date"}
+                <Text
+                  style={[
+                    styles.dateFieldText,
+                    !formEndDate && { color: "#9CA3AF" },
+                  ]}
+                >
+                  {formEndDate
+                    ? formatDisplayDate(formEndDate)
+                    : "Select end date"}
                 </Text>
-                <Ionicons name={showEndPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" />
+                <Ionicons
+                  name={showEndPicker ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color="#9CA3AF"
+                />
               </TouchableOpacity>
 
               {showEndPicker && (
@@ -742,7 +954,8 @@ export default function TeacherHomeworkListScreen() {
                     minimumDate={parseDate(formStartDate)}
                     onChange={(event, date) => {
                       if (Platform.OS === "android") setShowEndPicker(false);
-                      if (date) setFormEndDate(date.toISOString().split("T")[0]);
+                      if (date)
+                        setFormEndDate(date.toISOString().split("T")[0]);
                     }}
                   />
                 </View>
@@ -782,8 +995,12 @@ export default function TeacherHomeworkListScreen() {
                     key={s}
                     style={[
                       styles.statusOption,
-                      formStatus === s && s === "Active" && styles.statusActiveGreen,
-                      formStatus === s && s === "Inactive" && styles.statusActiveAmber,
+                      formStatus === s &&
+                        s === "Active" &&
+                        styles.statusActiveGreen,
+                      formStatus === s &&
+                        s === "Inactive" &&
+                        styles.statusActiveAmber,
                     ]}
                     onPress={() => setFormStatus(s)}
                     activeOpacity={0.8}
@@ -793,7 +1010,11 @@ export default function TeacherHomeworkListScreen() {
                         styles.statusDot,
                         {
                           backgroundColor:
-                            formStatus === s ? "#fff" : s === "Active" ? "#16A34A" : "#D97706",
+                            formStatus === s
+                              ? "#fff"
+                              : s === "Active"
+                                ? "#16A34A"
+                                : "#D97706",
                         },
                       ]}
                     />
@@ -819,7 +1040,11 @@ export default function TeacherHomeworkListScreen() {
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Ionicons
-                    name={editing ? "checkmark-circle-outline" : "add-circle-outline"}
+                    name={
+                      editing
+                        ? "checkmark-circle-outline"
+                        : "add-circle-outline"
+                    }
                     size={18}
                     color="#fff"
                   />
@@ -877,9 +1102,18 @@ const styles = StyleSheet.create({
   stripItem: { flex: 1, alignItems: "center" },
   stripNum: { fontSize: 18, fontWeight: "800", color: "#fff" },
   stripLabel: { fontSize: 10, color: "rgba(255,255,255,0.7)", marginTop: 2 },
-  stripDivider: { width: 1, backgroundColor: "rgba(255,255,255,0.25)", marginVertical: 4 },
+  stripDivider: {
+    width: 1,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    marginVertical: 4,
+  },
 
-  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
   loadingText: { fontSize: 14, color: "#6B7280" },
 
   scroll: { paddingHorizontal: 16, paddingTop: 16 },
@@ -907,9 +1141,25 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     marginTop: 2,
   },
-  fileBadge: { fontSize: 7, fontWeight: "800", marginTop: 1, letterSpacing: 0.3 },
-  hwTitle: { fontSize: 15, fontWeight: "800", color: "#111827", marginBottom: 6 },
-  hwMeta: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 5, flexWrap: "wrap" },
+  fileBadge: {
+    fontSize: 7,
+    fontWeight: "800",
+    marginTop: 1,
+    letterSpacing: 0.3,
+  },
+  hwTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 6,
+  },
+  hwMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 5,
+    flexWrap: "wrap",
+  },
   hwDates: {
     flexDirection: "row",
     alignItems: "center",
@@ -966,11 +1216,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 14,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: "#374151", marginBottom: 6 },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#374151",
+    marginBottom: 6,
+  },
   emptySub: { fontSize: 13, color: "#9CA3AF", textAlign: "center" },
 
   overlay: { flex: 1, justifyContent: "flex-end" },
-  overlayBg: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  overlayBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
   sheet: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 24,
@@ -1129,7 +1387,11 @@ const styles = StyleSheet.create({
   },
   selectDotText: { fontSize: 11, fontWeight: "800" },
   selectOptionText: { fontSize: 14, color: "#111827", fontWeight: "500" },
-  selectOptionMetaRow: { flexDirection: "row", alignItems: "center", marginTop: 1 },
+  selectOptionMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 1,
+  },
   selectOptionMeta: { fontSize: 11, color: "#9CA3AF" },
 
   statusRow: { flexDirection: "row", gap: 10, marginBottom: 20 },

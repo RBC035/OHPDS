@@ -7,10 +7,11 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 
 import { StatusBar } from "expo-status-bar";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -24,21 +25,25 @@ import {
 } from "@/constants/theme";
 import { FontWeight } from "@/constants";
 
+import { PasswordResetService } from "@/services/api/passwordResetService";
+
 export default function ResetPassword() {
+  // Carried over from the OTP screen — both are needed by the backend.
+  const params = useLocalSearchParams();
+  const phone = String(params.phone ?? "");
+  const otp = String(params.otp ?? "");
+
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
-  const [focus, setFocus] = useState({
-    password: false,
-    confirm: false,
-  });
+  const [focus, setFocus] = useState({ password: false, confirm: false });
 
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleReset = () => {
-    // ─────────────────────────────
-    // VALIDATION
-    // ─────────────────────────────
+  const handleReset = async () => {
+    // ── Validation ──
     if (password.length < 6) {
       setError("Password must be at least 6 characters");
       return;
@@ -49,8 +54,34 @@ export default function ResetPassword() {
       return;
     }
 
+    // Safety: if we somehow arrived without phone/otp, send the user back.
+    if (!phone || !otp) {
+      setError("Your reset session expired. Please request a new code.");
+      return;
+    }
+
     setError("");
-    router.replace("/(auth)/login");
+    setLoading(true);
+    try {
+      const res = await PasswordResetService.resetPassword({
+        phone,
+        otp,
+        password,
+      });
+
+      if (res.success) {
+        router.replace("/(auth)/login");
+      } else {
+        setError(res.message || "Failed to reset password");
+      }
+    } catch (err: any) {
+      setError(
+        err?.response?.data?.message ??
+          "Failed to reset password. The code may have expired.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -89,7 +120,11 @@ export default function ResetPassword() {
         <Text style={styles.label}>NEW PASSWORD</Text>
 
         <View
-          style={[styles.inputWrapper, focus.password && styles.inputFocused]}
+          style={[
+            styles.inputWrapper,
+            focus.password && styles.inputFocused,
+            !!error && styles.inputError,
+          ]}
         >
           <Ionicons
             name="lock-closed-outline"
@@ -101,16 +136,28 @@ export default function ResetPassword() {
           <TextInput
             placeholder="Enter new password"
             placeholderTextColor={Colors.textMuted}
-            secureTextEntry
+            secureTextEntry={!showPassword}
             value={password}
             onChangeText={(text) => {
               setPassword(text);
               setError("");
             }}
             style={styles.input}
+            editable={!loading}
             onFocus={() => setFocus((p) => ({ ...p, password: true }))}
             onBlur={() => setFocus((p) => ({ ...p, password: false }))}
           />
+
+          <TouchableOpacity
+            onPress={() => setShowPassword((s) => !s)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name={showPassword ? "eye-outline" : "eye-off-outline"}
+              size={18}
+              color={Colors.textMuted}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* CONFIRM PASSWORD */}
@@ -119,7 +166,11 @@ export default function ResetPassword() {
         </Text>
 
         <View
-          style={[styles.inputWrapper, focus.confirm && styles.inputFocused]}
+          style={[
+            styles.inputWrapper,
+            focus.confirm && styles.inputFocused,
+            !!error && styles.inputError,
+          ]}
         >
           <Ionicons
             name="shield-checkmark-outline"
@@ -131,13 +182,14 @@ export default function ResetPassword() {
           <TextInput
             placeholder="Confirm password"
             placeholderTextColor={Colors.textMuted}
-            secureTextEntry
+            secureTextEntry={!showPassword}
             value={confirm}
             onChangeText={(text) => {
               setConfirm(text);
               setError("");
             }}
             style={styles.input}
+            editable={!loading}
             onFocus={() => setFocus((p) => ({ ...p, confirm: true }))}
             onBlur={() => setFocus((p) => ({ ...p, confirm: false }))}
           />
@@ -156,9 +208,20 @@ export default function ResetPassword() {
         )}
 
         {/* BUTTON */}
-        <TouchableOpacity style={styles.button} onPress={handleReset}>
-          <Text style={styles.buttonText}>Reset password</Text>
-          <Ionicons name="arrow-forward" size={18} color="#fff" />
+        <TouchableOpacity
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleReset}
+          disabled={loading}
+          activeOpacity={0.85}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Text style={styles.buttonText}>Reset password</Text>
+              <Ionicons name="arrow-forward" size={18} color="#fff" />
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -253,6 +316,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
 
+  inputError: {
+    borderColor: Colors.error,
+    backgroundColor: "#FFF8F8",
+  },
+
   input: {
     flex: 1,
     fontFamily: FontFamily.semiBold,
@@ -283,6 +351,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     gap: 6,
     ...Shadows.button,
+  },
+
+  buttonDisabled: {
+    opacity: 0.7,
   },
 
   buttonText: {

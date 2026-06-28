@@ -26,8 +26,11 @@ import {
 } from "@/constants/theme";
 import { FontWeight } from "@/constants";
 
+import { PasswordResetService } from "@/services/api/passwordResetService";
+
 export default function ForgotPassword() {
-  const [email, setEmail] = useState("");
+  // Only the 9 national digits live in state; "+255" is a fixed prefix.
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState(false);
@@ -62,32 +65,46 @@ export default function ForgotPassword() {
     ]).start();
   };
 
+  const onChangePhone = (t: string) => {
+    let d = t.replace(/\D/g, ""); // keep digits only
+    d = d.replace(/^0+/, ""); // block leading zero(s) entirely
+    if (d.length > 9) d = d.slice(0, 9);
+    setPhone(d);
+    setError("");
+  };
+
   // ─────────────────────────────
   // Send OTP
   // ─────────────────────────────
   const handleSend = async () => {
-    if (!email.trim()) {
-      setError("Email is required");
+    if (phone.length !== 9) {
+      setError("Enter a valid 9-digit phone number");
       triggerShake();
       return;
     }
 
-    if (!/\S+@\S+\.\S+/.test(email)) {
-      setError("Enter valid email address");
-      triggerShake();
-      return;
-    }
+    // Full E.164-style national number for the backend (it normalises anyway).
+    const fullPhone = `255${phone}`;
 
     setLoading(true);
+    try {
+      await PasswordResetService.requestOtp({ phone: fullPhone });
 
-    setTimeout(() => {
-      setLoading(false);
-
+      // The backend always responds generically (it never reveals whether the
+      // number exists), so we always move forward to the OTP screen.
       router.push({
         pathname: "/(auth)/otp-verification",
-        params: { email },
+        params: { phone: fullPhone },
       });
-    }, 1200);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ??
+        "Could not send the code. Please try again.";
+      setError(msg);
+      triggerShake();
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -122,29 +139,24 @@ export default function ForgotPassword() {
         <Text style={styles.title}>Forgot password</Text>
 
         <Text style={styles.subtitle}>
-          Enter your email address and we will send OTP verification code.
+          Enter your phone number and we will send an OTP verification code by
+          SMS.
         </Text>
       </LinearGradient>
 
       {/* ───────────────── FORM ───────────────── */}
       <Animated.View
-        style={[
-          styles.formCard,
-          {
-            transform: [{ translateX: shakeAnim }],
-          },
-        ]}
+        style={[styles.formCard, { transform: [{ translateX: shakeAnim }] }]}
       >
         {/* Badge */}
         <View style={styles.badge}>
-          <Ionicons name="mail-outline" size={14} color={Colors.primary} />
-
+          <Ionicons name="call-outline" size={14} color={Colors.primary} />
           <Text style={styles.badgeText}>Password recovery</Text>
         </View>
 
-        {/* Email Input */}
+        {/* Phone Input */}
         <View style={styles.inputWrapper}>
-          <Text style={styles.label}>EMAIL ADDRESS</Text>
+          <Text style={styles.label}>PHONE NUMBER</Text>
 
           <View
             style={[
@@ -153,24 +165,27 @@ export default function ForgotPassword() {
               !!error && styles.inputError,
             ]}
           >
-            <Ionicons
-              name="mail-outline"
-              size={18}
-              color={focused ? Colors.primary : Colors.textMuted}
-              style={{ marginRight: 10 }}
-            />
+            {/* Fixed, non-editable +255 prefix */}
+            <View style={styles.prefixBox}>
+              <Ionicons
+                name="call-outline"
+                size={16}
+                color={Colors.primary}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.prefixText}>+255</Text>
+            </View>
+
+            <View style={styles.prefixDivider} />
 
             <TextInput
-              placeholder="your@email.com"
+              placeholder="712 345 678"
               placeholderTextColor={Colors.textMuted}
-              value={email}
-              onChangeText={(t) => {
-                setEmail(t);
-                setError("");
-              }}
+              value={phone}
+              onChangeText={onChangePhone}
               style={styles.input}
-              keyboardType="email-address"
-              autoCapitalize="none"
+              keyboardType="number-pad"
+              maxLength={9}
               autoCorrect={false}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
@@ -184,7 +199,6 @@ export default function ForgotPassword() {
                 size={14}
                 color={Colors.error}
               />
-
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
@@ -202,7 +216,6 @@ export default function ForgotPassword() {
           ) : (
             <>
               <Text style={styles.buttonText}>Send OTP</Text>
-
               <Ionicons
                 name="arrow-forward"
                 size={18}
@@ -224,7 +237,6 @@ export default function ForgotPassword() {
             size={16}
             color={Colors.primary}
           />
-
           <Text style={styles.backText}>Back to login</Text>
         </TouchableOpacity>
       </Animated.View>
@@ -383,11 +395,32 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF8F8",
   },
 
+  // Fixed +255 prefix
+  prefixBox: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  prefixText: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: FontSize.md,
+    fontWeight: "800",
+    color: Colors.textPrimary,
+  },
+
+  prefixDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: Colors.border,
+    marginHorizontal: Spacing[3],
+  },
+
   input: {
     flex: 1,
     fontFamily: FontFamily.semiBold,
     color: Colors.textPrimary,
     fontSize: FontSize.md,
+    letterSpacing: 1,
   },
 
   errorRow: {

@@ -18,7 +18,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { AuthService } from "@/services/api/authService";
 import { ParentService } from "@/services/api/parentService";
-import api from "@/services/api/axios";
+
+// Reduce any stored phone (255712…, 0712…, +255 712…) to its 9 national digits.
+function toNationalDigits(phone: string): string {
+  let d = (phone ?? "").replace(/\D/g, "");
+  if (d.startsWith("255")) d = d.slice(3);
+  else if (d.startsWith("0")) d = d.replace(/^0+/, "");
+  return d.slice(0, 9);
+}
 
 // ── Password field with show/hide toggle ─────────────────────────────────────
 
@@ -49,8 +56,15 @@ function PasswordInput({
           secureTextEntry={!show}
           autoCapitalize="none"
         />
-        <TouchableOpacity onPress={() => setShow((v) => !v)} style={styles.eyeBtn}>
-          <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={18} color="#6B7280" />
+        <TouchableOpacity
+          onPress={() => setShow((v) => !v)}
+          style={styles.eyeBtn}
+        >
+          <Ionicons
+            name={show ? "eye-off-outline" : "eye-outline"}
+            size={18}
+            color="#6B7280"
+          />
         </TouchableOpacity>
       </View>
     </>
@@ -64,17 +78,17 @@ export function SettingsTab() {
   const [user, setUser] = useState<any>(null);
 
   // edit profile modal
-  const [editVisible, setEditVisible]   = useState(false);
-  const [editName, setEditName]         = useState("");
-  const [editPhone, setEditPhone]       = useState("");
+  const [editVisible, setEditVisible] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState(""); // 9 national digits only
   const [savingProfile, setSavingProfile] = useState(false);
 
   // change password modal
-  const [pwdVisible, setPwdVisible]   = useState(false);
-  const [currentPwd, setCurrentPwd]   = useState("");
-  const [newPwd, setNewPwd]           = useState("");
-  const [confirmPwd, setConfirmPwd]   = useState("");
-  const [savingPwd, setSavingPwd]     = useState(false);
+  const [pwdVisible, setPwdVisible] = useState(false);
+  const [currentPwd, setCurrentPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+  const [savingPwd, setSavingPwd] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -84,11 +98,19 @@ export function SettingsTab() {
           const u = JSON.parse(raw);
           setUser(u);
           setEditName(u.name ?? "");
-          setEditPhone(u.phone ?? "");
+          setEditPhone(toNationalDigits(u.phone ?? ""));
         }
       } catch {}
     })();
   }, []);
+
+  // Phone field: digits only, block leading 0, cap at 9.
+  const onChangePhone = (t: string) => {
+    let d = t.replace(/\D/g, "");
+    d = d.replace(/^0+/, ""); // typing 0 then 6 -> 6 becomes first digit
+    if (d.length > 9) d = d.slice(0, 9);
+    setEditPhone(d);
+  };
 
   function parentId(id?: number | string) {
     if (!id) return "OHPDS-PAR-0000";
@@ -96,7 +118,12 @@ export function SettingsTab() {
   }
 
   const initials = user?.name
-    ? user.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
+    ? user.name
+        .split(" ")
+        .map((n: string) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
     : "PA";
 
   async function handleLogout() {
@@ -118,12 +145,19 @@ export function SettingsTab() {
       Alert.alert("Required", "Please enter your name.");
       return;
     }
+    if (editPhone.length !== 9) {
+      Alert.alert(
+        "Invalid phone",
+        "Enter a valid 9-digit phone number after +255.",
+      );
+      return;
+    }
     try {
       setSavingProfile(true);
       if (!user?.id) throw new Error("Missing user id");
       const payload = {
-        name:  editName.trim(),
-        phone: editPhone.trim(),
+        name: editName.trim(),
+        phone: `255${editPhone}`, // store full international form
         email: user.email ?? "",
       };
       await ParentService.update(Number(user.id), payload);
@@ -133,13 +167,20 @@ export function SettingsTab() {
       setEditVisible(false);
       Alert.alert("Success", "Profile updated.");
     } catch (e: any) {
-      Alert.alert("Error", e?.response?.data?.message ?? e?.message ?? "Failed to update profile.");
+      Alert.alert(
+        "Error",
+        e?.response?.data?.message ?? e?.message ?? "Failed to update profile.",
+      );
     } finally {
       setSavingProfile(false);
     }
   }
 
   async function handleChangePassword() {
+    if (!currentPwd.trim()) {
+      Alert.alert("Required", "Please enter your current password.");
+      return;
+    }
     if (!newPwd.trim()) {
       Alert.alert("Required", "Please enter a new password.");
       return;
@@ -154,22 +195,31 @@ export function SettingsTab() {
     }
     try {
       setSavingPwd(true);
-      const body: any = { password: newPwd };
-      if (currentPwd) body.currentPassword = currentPwd;
-      await api.post("/change-password", body);
+      // Self-service change: backend requires BOTH current and new password.
+      await AuthService.changePassword({
+        currentPassword: currentPwd,
+        newPassword: newPwd,
+      });
       setPwdVisible(false);
-      setCurrentPwd(""); setNewPwd(""); setConfirmPwd("");
+      setCurrentPwd("");
+      setNewPwd("");
+      setConfirmPwd("");
       Alert.alert("Success", "Password changed successfully.");
     } catch (e: any) {
-      Alert.alert("Error", e?.response?.data?.message ?? "Failed to change password.");
+      Alert.alert(
+        "Error",
+        e?.response?.data?.message ?? "Failed to change password.",
+      );
     } finally {
       setSavingPwd(false);
     }
   }
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scroll}
+    >
       {/* ── PROFILE HEADER ── */}
       <View style={[styles.profileHeader, { paddingTop: insets.top + 24 }]}>
         <View style={styles.profilePic}>
@@ -184,7 +234,6 @@ export function SettingsTab() {
       </View>
 
       <View style={styles.body}>
-
         {/* ── ACCOUNT ── */}
         <Text style={styles.sectionLabel}>Account</Text>
         <View style={styles.section}>
@@ -195,13 +244,21 @@ export function SettingsTab() {
               try {
                 const raw = await AsyncStorage.getItem("user");
                 const u = raw ? JSON.parse(raw) : null;
-                if (u) { setUser(u); setEditName(u.name ?? ""); setEditPhone(u.phone ?? ""); }
+                if (u) {
+                  setUser(u);
+                  setEditName(u.name ?? "");
+                  setEditPhone(toNationalDigits(u.phone ?? ""));
+                }
               } catch {}
               setEditVisible(true);
             }}
           >
             <View style={[styles.rowIcon, { backgroundColor: "#EEF4FF" }]}>
-              <Ionicons name="person-circle-outline" size={18} color="#2563EB" />
+              <Ionicons
+                name="person-circle-outline"
+                size={18}
+                color="#2563EB"
+              />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowLabel}>Edit profile</Text>
@@ -215,7 +272,12 @@ export function SettingsTab() {
           <TouchableOpacity
             style={styles.row}
             activeOpacity={0.75}
-            onPress={() => { setCurrentPwd(""); setNewPwd(""); setConfirmPwd(""); setPwdVisible(true); }}
+            onPress={() => {
+              setCurrentPwd("");
+              setNewPwd("");
+              setConfirmPwd("");
+              setPwdVisible(true);
+            }}
           >
             <View style={[styles.rowIcon, { backgroundColor: "#EDE9FE" }]}>
               <Ionicons name="lock-closed-outline" size={18} color="#7C3AED" />
@@ -263,7 +325,9 @@ export function SettingsTab() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.appName}>OHPDS</Text>
-              <Text style={styles.appFullName}>Online Home Package Delivery System</Text>
+              <Text style={styles.appFullName}>
+                Online Home Package Delivery System
+              </Text>
             </View>
             <View style={styles.versionBadge}>
               <Text style={styles.versionText}>v 1.0</Text>
@@ -274,18 +338,34 @@ export function SettingsTab() {
 
           <View style={styles.descBlock}>
             <Text style={styles.descText}>
-              OHPDS is a mobile platform that connects teachers, students, and parents in one place.
+              OHPDS is a mobile platform that connects teachers, students, and
+              parents in one place.
             </Text>
             <Text style={[styles.descText, { marginTop: 8 }]}>
-              Teachers can create and assign homework directly from the app. Parents receive instant notifications, review the assignments, and guide their children to complete the work all from their mobile device.
+              Teachers can create and assign homework directly from the app.
+              Parents receive instant notifications, review the assignments, and
+              guide their children to complete the work all from their mobile
+              device.
             </Text>
           </View>
 
           <View style={styles.rowDivider} />
 
           {[
-            { label: "Version",  value: "1.0",                 icon: "code-slash-outline",     color: "#2563EB", bg: "#EEF4FF" },
-            { label: "Platform", value: "React Native (Expo)", icon: "phone-portrait-outline", color: "#16A34A", bg: "#DCFCE7" },
+            {
+              label: "Version",
+              value: "1.0",
+              icon: "code-slash-outline",
+              color: "#2563EB",
+              bg: "#EEF4FF",
+            },
+            {
+              label: "Platform",
+              value: "React Native (Expo)",
+              icon: "phone-portrait-outline",
+              color: "#16A34A",
+              bg: "#DCFCE7",
+            },
           ].map((d, i, arr) => (
             <View key={d.label}>
               <View style={styles.aboutDetailRow}>
@@ -301,7 +381,11 @@ export function SettingsTab() {
         </View>
 
         {/* ── LOG OUT ── */}
-        <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.8} onPress={handleLogout}>
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          activeOpacity={0.8}
+          onPress={handleLogout}
+        >
           <Ionicons name="log-out-outline" size={18} color="#DC2626" />
           <Text style={styles.logoutText}>Log out</Text>
         </TouchableOpacity>
@@ -311,26 +395,52 @@ export function SettingsTab() {
       </View>
 
       {/* ══════ EDIT PROFILE MODAL ══════ */}
-      <Modal visible={editVisible} animationType="slide" transparent onRequestClose={() => setEditVisible(false)}>
-        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <TouchableOpacity style={styles.overlayBg} activeOpacity={1} onPress={() => setEditVisible(false)} />
+      <Modal
+        visible={editVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setEditVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <TouchableOpacity
+            style={styles.overlayBg}
+            activeOpacity={1}
+            onPress={() => setEditVisible(false)}
+          />
           <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
             <View style={styles.handle} />
             <View style={styles.sheetHeader}>
-              <View style={[styles.sheetIconBox, { backgroundColor: "#EEF4FF" }]}>
-                <Ionicons name="person-circle-outline" size={20} color="#2563EB" />
+              <View
+                style={[styles.sheetIconBox, { backgroundColor: "#EEF4FF" }]}
+              >
+                <Ionicons
+                  name="person-circle-outline"
+                  size={20}
+                  color="#2563EB"
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.sheetTitle}>Edit profile</Text>
                 <Text style={styles.sheetSub}>Update your name and phone</Text>
               </View>
-              <TouchableOpacity onPress={() => setEditVisible(false)} style={styles.closeBtn}>
+              <TouchableOpacity
+                onPress={() => setEditVisible(false)}
+                style={styles.closeBtn}
+              >
                 <Ionicons name="close" size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={styles.label}>Full name <Text style={styles.required}>*</Text></Text>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.label}>
+                Full name <Text style={styles.required}>*</Text>
+              </Text>
               <TextInput
                 style={styles.input}
                 placeholder="Full name"
@@ -339,24 +449,43 @@ export function SettingsTab() {
                 onChangeText={setEditName}
               />
 
-              <Text style={styles.label}>Phone</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Phone number"
-                placeholderTextColor="#9CA3AF"
-                value={editPhone}
-                onChangeText={setEditPhone}
-                keyboardType="phone-pad"
-              />
+              <Text style={styles.label}>
+                Phone <Text style={styles.required}>*</Text>
+              </Text>
+              <View style={styles.phoneWrap}>
+                <View style={styles.prefixBox}>
+                  <Ionicons
+                    name="call-outline"
+                    size={15}
+                    color="#7C3AED"
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={styles.prefixText}>+255</Text>
+                </View>
+                <View style={styles.prefixDivider} />
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="712 345 678"
+                  placeholderTextColor="#9CA3AF"
+                  value={editPhone}
+                  onChangeText={onChangePhone}
+                  keyboardType="number-pad"
+                  maxLength={9}
+                />
+              </View>
 
               <Text style={styles.label}>
                 Email{" "}
-                <Text style={{ fontSize: 10, color: "#9CA3AF", fontWeight: "400" }}>
+                <Text
+                  style={{ fontSize: 10, color: "#9CA3AF", fontWeight: "400" }}
+                >
                   (username · cannot be changed)
                 </Text>
               </Text>
               <View style={[styles.input, styles.inputReadOnly]}>
-                <Text style={styles.inputReadOnlyText}>{user?.email || "—"}</Text>
+                <Text style={styles.inputReadOnlyText}>
+                  {user?.email || "—"}
+                </Text>
               </View>
 
               <TouchableOpacity
@@ -365,9 +494,15 @@ export function SettingsTab() {
                 activeOpacity={0.85}
                 disabled={savingProfile}
               >
-                {savingProfile
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />}
+                {savingProfile ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={18}
+                    color="#fff"
+                  />
+                )}
                 <Text style={styles.submitBtnText}>Save profile</Text>
               </TouchableOpacity>
               <View style={{ height: 20 }} />
@@ -377,38 +512,89 @@ export function SettingsTab() {
       </Modal>
 
       {/* ══════ CHANGE PASSWORD MODAL ══════ */}
-      <Modal visible={pwdVisible} animationType="slide" transparent onRequestClose={() => setPwdVisible(false)}>
-        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <TouchableOpacity style={styles.overlayBg} activeOpacity={1} onPress={() => setPwdVisible(false)} />
+      <Modal
+        visible={pwdVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPwdVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <TouchableOpacity
+            style={styles.overlayBg}
+            activeOpacity={1}
+            onPress={() => setPwdVisible(false)}
+          />
           <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
             <View style={styles.handle} />
             <View style={styles.sheetHeader}>
-              <View style={[styles.sheetIconBox, { backgroundColor: "#EDE9FE" }]}>
-                <Ionicons name="lock-closed-outline" size={20} color="#7C3AED" />
+              <View
+                style={[styles.sheetIconBox, { backgroundColor: "#EDE9FE" }]}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={20}
+                  color="#7C3AED"
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.sheetTitle}>Change password</Text>
-                <Text style={styles.sheetSub}>Enter and confirm your new password</Text>
+                <Text style={styles.sheetSub}>
+                  Enter your current and new password
+                </Text>
               </View>
-              <TouchableOpacity onPress={() => setPwdVisible(false)} style={styles.closeBtn}>
+              <TouchableOpacity
+                onPress={() => setPwdVisible(false)}
+                style={styles.closeBtn}
+              >
                 <Ionicons name="close" size={18} color="#6B7280" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <PasswordInput label="Current password (optional)" value={currentPwd} onChangeText={setCurrentPwd} placeholder="Current password" />
-              <PasswordInput label="New password"     value={newPwd}     onChangeText={setNewPwd}     placeholder="At least 6 characters" />
-              <PasswordInput label="Confirm password" value={confirmPwd} onChangeText={setConfirmPwd} placeholder="Re-enter new password" />
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <PasswordInput
+                label="Current password"
+                value={currentPwd}
+                onChangeText={setCurrentPwd}
+                placeholder="Current password"
+              />
+              <PasswordInput
+                label="New password"
+                value={newPwd}
+                onChangeText={setNewPwd}
+                placeholder="At least 6 characters"
+              />
+              <PasswordInput
+                label="Confirm password"
+                value={confirmPwd}
+                onChangeText={setConfirmPwd}
+                placeholder="Re-enter new password"
+              />
 
               <TouchableOpacity
-                style={[styles.submitBtn, { backgroundColor: "#7C3AED" }, savingPwd && { opacity: 0.6 }]}
+                style={[
+                  styles.submitBtn,
+                  { backgroundColor: "#7C3AED" },
+                  savingPwd && { opacity: 0.6 },
+                ]}
                 onPress={handleChangePassword}
                 activeOpacity={0.85}
                 disabled={savingPwd}
               >
-                {savingPwd
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />}
+                {savingPwd ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={18}
+                    color="#fff"
+                  />
+                )}
                 <Text style={styles.submitBtnText}>Change password</Text>
               </TouchableOpacity>
               <View style={{ height: 20 }} />
@@ -424,7 +610,7 @@ export default SettingsTab;
 
 const styles = StyleSheet.create({
   scroll: { paddingBottom: 20 },
-  body:   { paddingHorizontal: 20 },
+  body: { paddingHorizontal: 20 },
 
   profileHeader: {
     backgroundColor: "#2563EB",
@@ -433,72 +619,249 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   profilePic: {
-    width: 74, height: 74, borderRadius: 37,
+    width: 74,
+    height: 74,
+    borderRadius: 37,
     backgroundColor: "rgba(255,255,255,0.2)",
-    borderWidth: 3, borderColor: "rgba(255,255,255,0.4)",
-    justifyContent: "center", alignItems: "center", marginBottom: 12,
+    borderWidth: 3,
+    borderColor: "rgba(255,255,255,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
   },
   profileInitials: { fontSize: 28, fontWeight: "800", color: "#fff" },
-  profileName:     { fontSize: 19, fontWeight: "800", color: "#fff" },
-  profileRole:     { fontSize: 11, color: "rgba(255,255,255,0.65)", marginTop: 4 },
+  profileName: { fontSize: 19, fontWeight: "800", color: "#fff" },
+  profileRole: { fontSize: 11, color: "rgba(255,255,255,0.65)", marginTop: 4 },
   profileTag: {
-    flexDirection: "row", alignItems: "center",
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.18)",
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginTop: 10,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginTop: 10,
   },
   profileTagText: { fontSize: 11, fontWeight: "600", color: "#fff" },
 
-  sectionLabel: { fontSize: 15, fontWeight: "800", color: "#111827", marginBottom: 10, marginTop: 22 },
-  section:      { backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", overflow: "hidden" },
-  rowDivider:   { height: 1, backgroundColor: "#F3F4F6", marginHorizontal: 14 },
+  sectionLabel: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 10,
+    marginTop: 22,
+  },
+  section: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    overflow: "hidden",
+  },
+  rowDivider: { height: 1, backgroundColor: "#F3F4F6", marginHorizontal: 14 },
 
-  row:      { flexDirection: "row", alignItems: "center", gap: 12, padding: 16 },
-  rowIcon:  { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16 },
+  rowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
   rowLabel: { fontSize: 13, fontWeight: "600", color: "#111827" },
-  rowSub:   { fontSize: 11, color: "#6B7280", marginTop: 1 },
+  rowSub: { fontSize: 11, color: "#6B7280", marginTop: 1 },
 
-  aboutHeader:      { flexDirection: "row", alignItems: "center", gap: 14, padding: 16 },
-  appIconBox:       { width: 52, height: 52, borderRadius: 14, backgroundColor: "#EEF4FF", justifyContent: "center", alignItems: "center", flexShrink: 0 },
-  appName:          { fontSize: 18, fontWeight: "800", color: "#111827" },
-  appFullName:      { fontSize: 11, color: "#6B7280", marginTop: 2 },
-  versionBadge:     { backgroundColor: "#DCFCE7", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  versionText:      { fontSize: 11, fontWeight: "700", color: "#16A34A" },
-  descBlock:        { padding: 16 },
-  descText:         { fontSize: 13, color: "#374151", lineHeight: 20 },
-  aboutDetailRow:   { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
-  aboutDetailLabel: { fontSize: 12, color: "#6B7280", fontWeight: "600", width: 72 },
-  aboutDetailValue: { fontSize: 13, color: "#111827", fontWeight: "600", flex: 1 },
+  aboutHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+  },
+  appIconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: "#EEF4FF",
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  appName: { fontSize: 18, fontWeight: "800", color: "#111827" },
+  appFullName: { fontSize: 11, color: "#6B7280", marginTop: 2 },
+  versionBadge: {
+    backgroundColor: "#DCFCE7",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  versionText: { fontSize: 11, fontWeight: "700", color: "#16A34A" },
+  descBlock: { padding: 16 },
+  descText: { fontSize: 13, color: "#374151", lineHeight: 20 },
+  aboutDetailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  aboutDetailLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "600",
+    width: 72,
+  },
+  aboutDetailValue: {
+    fontSize: 13,
+    color: "#111827",
+    fontWeight: "600",
+    flex: 1,
+  },
 
-  logoutBtn:  { backgroundColor: "#FEE2E2", borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 8 },
+  logoutBtn: {
+    backgroundColor: "#FEE2E2",
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 8,
+  },
   logoutText: { fontSize: 14, fontWeight: "700", color: "#DC2626" },
-  footerText: { textAlign: "center", fontSize: 11, color: "#9CA3AF", marginTop: 16 },
+  footerText: {
+    textAlign: "center",
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginTop: 16,
+  },
 
-  overlay:   { flex: 1, justifyContent: "flex-end" },
-  overlayBg: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
-  sheet:     { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "90%" },
-  handle:    { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E5E7EB", alignSelf: "center", marginBottom: 20 },
-  sheetHeader:  { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 22 },
-  sheetIconBox: { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center", flexShrink: 0 },
-  sheetTitle:   { fontSize: 16, fontWeight: "800", color: "#111827" },
-  sheetSub:     { fontSize: 11, color: "#6B7280", marginTop: 2 },
-  closeBtn:     { width: 30, height: 30, borderRadius: 15, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
+  overlay: { flex: 1, justifyContent: "flex-end" },
+  overlayBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: "90%",
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#E5E7EB",
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 22,
+  },
+  sheetIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  sheetTitle: { fontSize: 16, fontWeight: "800", color: "#111827" },
+  sheetSub: { fontSize: 11, color: "#6B7280", marginTop: 2 },
+  closeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
 
-  label:    { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 8, marginTop: 4 },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 8,
+    marginTop: 4,
+  },
   required: { color: "#DC2626" },
 
   input: {
     backgroundColor: "#F9FAFB",
-    borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, color: "#111827", marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#111827",
+    marginBottom: 16,
   },
-  inputReadOnly:     { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB", justifyContent: "center" },
+  inputReadOnly: {
+    backgroundColor: "#F3F4F6",
+    borderColor: "#E5E7EB",
+    justifyContent: "center",
+  },
   inputReadOnlyText: { fontSize: 14, color: "#9CA3AF" },
 
-  passwordWrap:  { flexDirection: "row", alignItems: "center", backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, marginBottom: 16 },
-  passwordInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: "#111827" },
-  eyeBtn:        { paddingHorizontal: 12, paddingVertical: 12 },
+  // Phone input with fixed +255 prefix
+  phoneWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    height: 48,
+  },
+  prefixBox: { flexDirection: "row", alignItems: "center" },
+  prefixText: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  prefixDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: "#E5E7EB",
+    marginHorizontal: 12,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+    letterSpacing: 1,
+    paddingVertical: 0,
+  },
 
-  submitBtn:     { backgroundColor: "#2563EB", borderRadius: 12, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 4 },
+  passwordWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#111827",
+  },
+  eyeBtn: { paddingHorizontal: 12, paddingVertical: 12 },
+
+  submitBtn: {
+    backgroundColor: "#2563EB",
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 4,
+  },
   submitBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });

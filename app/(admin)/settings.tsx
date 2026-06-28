@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -20,12 +20,13 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import api from "../../services/api/axios";
+import { AuthService } from "../../services/api/authService";
 import { TeacherService } from "../../services/api/teacherService";
 import { ParentService } from "../../services/api/parentService";
 
-type TeacherItem = { id: number | string; name: string };
-type ParentItem = { id: number | string; name: string };
+// email is the userlogin username for teachers/parents — needed for resets.
+type TeacherItem = { id: number | string; name: string; email?: string };
+type ParentItem = { id: number | string; name: string; email?: string };
 
 const PALETTE = [
   { bg: "#EEF4FF", color: "#2563EB" },
@@ -44,7 +45,7 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-// ── Reusable password field ────────────────────────────────────────────────
+// ── Reusable password field
 
 function PasswordInput({
   label,
@@ -239,6 +240,9 @@ function SelectPicker<T extends { id: number | string; name: string }>({
 export default function AdminSettings() {
   const insets = useSafeAreaInsets();
 
+  // logged-in admin's username (= userlogin username) for self password change
+  const [adminUsername, setAdminUsername] = useState<string>("");
+
   // admin change password
   const [adminPwdModal, setAdminPwdModal] = useState(false);
   const [newPwd, setNewPwd] = useState("");
@@ -265,8 +269,21 @@ export default function AdminSettings() {
   const [parentConfirmPwd, setParentConfirmPwd] = useState("");
   const [savingParent, setSavingParent] = useState(false);
 
-  // about section expand
-  const [aboutExpanded, setAboutExpanded] = useState(false);
+  // ── Load the stored admin username once ────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem("user");
+        if (raw) {
+          const u = JSON.parse(raw);
+          setAdminUsername(u?.username ?? "");
+          // console.log("STORED ADMIN USER:", u); 
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
 
   // ── Loaders ──────────────────────────────────────────────────────────────
 
@@ -299,6 +316,13 @@ export default function AdminSettings() {
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   async function handleAdminChangePassword() {
+    if (!adminUsername) {
+      Alert.alert(
+        "Account error",
+        "Could not determine the admin account. Please log out and back in.",
+      );
+      return;
+    }
     if (!newPwd.trim()) {
       Alert.alert("Required", "Please enter a new password.");
       return;
@@ -313,7 +337,15 @@ export default function AdminSettings() {
     }
     try {
       setSavingPwd(true);
-      await api.post("/change-password", { password: newPwd });
+      // Admin changes their own password via the admin-override endpoint,
+      // targeting their own username (no current password required).
+      const res = await AuthService.adminChangePassword({
+        username: adminUsername,
+        newPassword: newPwd,
+      });
+      if (!res.data?.success) {
+        throw new Error(res.data?.message ?? "Failed to change password.");
+      }
       setAdminPwdModal(false);
       setNewPwd("");
       setConfirmPwd("");
@@ -321,7 +353,9 @@ export default function AdminSettings() {
     } catch (e: any) {
       Alert.alert(
         "Error",
-        e?.response?.data?.message ?? "Failed to change password.",
+        e?.response?.data?.message ??
+          e?.message ??
+          "Failed to change password.",
       );
     } finally {
       setSavingPwd(false);
@@ -331,6 +365,13 @@ export default function AdminSettings() {
   async function handleTeacherResetPassword() {
     if (!selectedTeacher) {
       Alert.alert("Required", "Please select a teacher.");
+      return;
+    }
+    if (!selectedTeacher.email) {
+      Alert.alert(
+        "Missing email",
+        "This teacher has no email on file, so their login can't be located.",
+      );
       return;
     }
     if (!teacherNewPwd.trim()) {
@@ -347,9 +388,14 @@ export default function AdminSettings() {
     }
     try {
       setSavingTeacher(true);
-      await api.put(`/teachers/${selectedTeacher.id}/password`, {
-        password: teacherNewPwd,
+      // username = teacher email (their userlogin username)
+      const res = await AuthService.adminChangePassword({
+        username: selectedTeacher.email,
+        newPassword: teacherNewPwd,
       });
+      if (!res.data?.success) {
+        throw new Error(res.data?.message ?? "Failed to reset password.");
+      }
       setTeacherPwdModal(false);
       setSelectedTeacher(null);
       setTeacherNewPwd("");
@@ -361,7 +407,9 @@ export default function AdminSettings() {
     } catch (e: any) {
       Alert.alert(
         "Error",
-        e?.response?.data?.message ?? "Failed to reset teacher password.",
+        e?.response?.data?.message ??
+          e?.message ??
+          "Failed to reset teacher password.",
       );
     } finally {
       setSavingTeacher(false);
@@ -371,6 +419,13 @@ export default function AdminSettings() {
   async function handleParentResetPassword() {
     if (!selectedParent) {
       Alert.alert("Required", "Please select a parent.");
+      return;
+    }
+    if (!selectedParent.email) {
+      Alert.alert(
+        "Missing email",
+        "This parent has no email on file, so their login can't be located.",
+      );
       return;
     }
     if (!parentNewPwd.trim()) {
@@ -387,9 +442,14 @@ export default function AdminSettings() {
     }
     try {
       setSavingParent(true);
-      await api.put(`/parents/${selectedParent.id}/password`, {
-        password: parentNewPwd,
+      // username = parent email (their userlogin username)
+      const res = await AuthService.adminChangePassword({
+        username: selectedParent.email,
+        newPassword: parentNewPwd,
       });
+      if (!res.data?.success) {
+        throw new Error(res.data?.message ?? "Failed to reset password.");
+      }
       setParentPwdModal(false);
       setSelectedParent(null);
       setParentNewPwd("");
@@ -401,7 +461,9 @@ export default function AdminSettings() {
     } catch (e: any) {
       Alert.alert(
         "Error",
-        e?.response?.data?.message ?? "Failed to reset parent password.",
+        e?.response?.data?.message ??
+          e?.message ??
+          "Failed to reset parent password.",
       );
     } finally {
       setSavingParent(false);
@@ -415,7 +477,7 @@ export default function AdminSettings() {
         text: "Log out",
         style: "destructive",
         onPress: async () => {
-          await AsyncStorage.removeItem("token");
+          await AuthService.logout(); // clears token AND user
           router.replace("/(auth)/login");
         },
       },
@@ -433,7 +495,9 @@ export default function AdminSettings() {
             <Text style={styles.profileInitials}>AD</Text>
           </View>
           <Text style={styles.profileName}>Administrator</Text>
-          <Text style={styles.profileRole}>OHPDS School Management System</Text>
+          <Text style={styles.profileRole}>
+            {adminUsername || "OHPDS School Management System"}
+          </Text>
           <View style={styles.profileTag}>
             <Ionicons name="shield-checkmark-outline" size={11} color="#fff" />
             <Text style={styles.profileTagText}> Super Admin</Text>
@@ -527,7 +591,6 @@ export default function AdminSettings() {
           {/* ── ABOUT OHPDS ── */}
           <Text style={styles.sectionLabel}>About OHPDS</Text>
           <View style={styles.section}>
-            {/* app identity row */}
             <View style={styles.aboutHeader}>
               <View style={styles.appIconBox}>
                 <Ionicons name="home-outline" size={26} color="#2563EB" />
@@ -565,7 +628,6 @@ export default function AdminSettings() {
 
             <View style={styles.rowDivider} />
 
-            {/* detail rows */}
             {[
               {
                 label: "Version",
@@ -574,7 +636,6 @@ export default function AdminSettings() {
                 color: "#2563EB",
                 bg: "#EEF4FF",
               },
-              // { label: "Developer", value: "Mulsol Group",        icon: "business-outline",       color: "#7C3AED", bg: "#EDE9FE" },
               {
                 label: "Platform",
                 value: "React Native (Expo)",
@@ -888,7 +949,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F7FB" },
   body: { paddingHorizontal: 20 },
 
-  // header
   profileHeader: {
     backgroundColor: "#1E40AF",
     paddingBottom: 32,
@@ -925,7 +985,6 @@ const styles = StyleSheet.create({
   },
   profileTagText: { fontSize: 11, fontWeight: "600", color: "#fff" },
 
-  // sections
   sectionLabel: {
     fontSize: 15,
     fontWeight: "800",
@@ -954,30 +1013,6 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 13, fontWeight: "600", color: "#111827" },
   rowSub: { fontSize: 11, color: "#6B7280", marginTop: 1 },
 
-  // info blocks (help & support)
-  infoBlock: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 16,
-  },
-  infoIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    flexShrink: 0,
-  },
-  infoLabel: {
-    fontSize: 11,
-    color: "#6B7280",
-    fontWeight: "600",
-    marginBottom: 3,
-  },
-  infoLink: { fontSize: 14, fontWeight: "600", color: "#2563EB" },
-
-  // about section
   aboutHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1024,7 +1059,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // logout
   logoutBtn: {
     backgroundColor: "#FEE2E2",
     borderRadius: 14,
@@ -1043,7 +1077,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 
-  // modals
   overlay: { flex: 1, justifyContent: "flex-end" },
   overlayBg: {
     ...StyleSheet.absoluteFillObject,
@@ -1127,7 +1160,6 @@ const styles = StyleSheet.create({
   },
   submitBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 
-  // select dropdown
   selectField: {
     flexDirection: "row",
     alignItems: "center",

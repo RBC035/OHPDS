@@ -20,6 +20,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { ClassService } from "../../../services/api/classService";
 import { StudentClassService } from "../../../services/api/studentClassService";
 import {
@@ -31,19 +32,17 @@ import { SubjectService } from "../../../services/api/subjectService";
 
 type Student = { id: number; name: string; gender: string; dob: string };
 
-// Shape returned by GET /students/{id}/classes  (student_class row + joined class name)
 type AssignedClass = {
-  id: number | string; // student_class record id  → DELETE /student-classes/{id}
+  id: number | string;
   classId: number | string;
-  name?: string; // joined class name
+  name?: string;
   studyYear?: string;
 };
 
-// Shape returned by GET /students/{id}/subjects  (student_subject row + joined subject name)
 type EnrolledSubject = {
-  id: number | string; // student_subject record id  → DELETE /student-subjects/{id}
+  id: number | string;
   subjectId: number | string;
-  name?: string; // joined subject name
+  name?: string;
   status?: string;
 };
 
@@ -94,6 +93,20 @@ function genderStyle(gender: string) {
     label: gender,
     icon: "person-outline" as const,
   };
+}
+
+// Backend-friendly YYYY-MM-DD (local, no timezone shift).
+function toISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function parseISODate(s: string): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 function formatDob(dob: string): string {
@@ -156,31 +169,25 @@ export default function AdminStudentDetailScreen() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("profile");
   const [tabSearch, setTabSearch] = useState("");
 
-  // edit profile modal
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formName, setFormName] = useState("");
   const [formGender, setFormGender] = useState("Male");
   const [formDob, setFormDob] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // assign modals
   const [assignClassVisible, setAssignClassVisible] = useState(false);
   const [assignSubjectVisible, setAssignSubjectVisible] = useState(false);
   const [assignSearch, setAssignSearch] = useState("");
   const [assigning, setAssigning] = useState(false);
 
-  // class select state
   const [selectedClass, setSelectedClass] = useState<ClassCatalog | null>(null);
   const [classDropdownOpen, setClassDropdownOpen] = useState(false);
 
-  // editing an existing assigned class
   const [editingAssignedClass, setEditingAssignedClass] =
     useState<AssignedClass | null>(null);
 
-  // study year for class assignment
   const [studyYear, setStudyYear] = useState(currentAcademicYear());
-
-  // ── Loaders ──────────────────────────────────────────────────────────────
 
   const loadStudent = useCallback(async () => {
     try {
@@ -251,14 +258,13 @@ export default function AdminStudentDetailScreen() {
     if (activeTab === "subjects") loadSubjectsTab();
   }, [activeTab]);
 
-  // ── Edit profile ──────────────────────────────────────────────────────────
-
   function openEdit() {
     if (!student) return;
     setFormName(student.name);
     setFormDob(student.dob ?? "");
     const g = (student.gender ?? "").toLowerCase();
     setFormGender(g === "female" || g === "f" ? "Female" : "Male");
+    setShowDatePicker(false);
     setEditModalVisible(true);
   }
 
@@ -272,6 +278,19 @@ export default function AdminStudentDetailScreen() {
     setStudyYear(cls.studyYear ?? currentAcademicYear());
     setEditingAssignedClass(cls);
     setAssignClassVisible(true);
+  }
+
+  const pickerDate: Date = parseISODate(formDob) ?? new Date(2012, 0, 1);
+  const todayMax = new Date();
+
+  function onDateChange(event: any, selected?: Date) {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+      if (event?.type === "dismissed") return;
+    }
+    if (selected) {
+      setFormDob(toISODate(selected));
+    }
   }
 
   async function handleSave() {
@@ -303,8 +322,6 @@ export default function AdminStudentDetailScreen() {
     }
   }
 
-  // ── Delete student ────────────────────────────────────────────────────────
-
   function handleDelete() {
     if (!student) return;
     Alert.alert(
@@ -331,8 +348,6 @@ export default function AdminStudentDetailScreen() {
     );
   }
 
-  // ── Assign class ──────────────────────────────────────────────────────────
-
   async function handleAssignClass(cls?: ClassCatalog) {
     const target = cls ?? selectedClass;
     if (!target) {
@@ -342,7 +357,6 @@ export default function AdminStudentDetailScreen() {
     try {
       setAssigning(true);
       if (editingAssignedClass) {
-        // update existing assigned class record
         await StudentClassService.update(editingAssignedClass.id, {
           stuentId: studentId,
           classId: target.id,
@@ -396,8 +410,6 @@ export default function AdminStudentDetailScreen() {
     );
   }
 
-  // ── Enroll in subject ─────────────────────────────────────────────────────
-
   async function handleEnrollSubject(sub: SubjectCatalog) {
     try {
       setAssigning(true);
@@ -445,8 +457,6 @@ export default function AdminStudentDetailScreen() {
     );
   }
 
-  // ── Name resolvers (API join may not include name) ────────────────────────
-
   const classNameMap = new Map(classCatalog.map((c) => [String(c.id), c.name]));
   const subjectNameMap = new Map(
     subjectCatalog.map((s) => [String(s.id), s.name]),
@@ -464,8 +474,6 @@ export default function AdminStudentDetailScreen() {
       `Subject #${s.subjectId}`
     );
   }
-
-  // ── Derived ───────────────────────────────────────────────────────────────
 
   const assignedClassIds = new Set(
     assignedClasses.map((c) => String(c.classId ?? c.id)),
@@ -491,8 +499,6 @@ export default function AdminStudentDetailScreen() {
   const filteredSubjects = enrolledSubjects.filter((s) =>
     resolvedSubjectName(s).toLowerCase().includes(tabSearch.toLowerCase()),
   );
-
-  // ── Loading / error ───────────────────────────────────────────────────────
 
   if (loadingStudent) {
     return (
@@ -530,7 +536,6 @@ export default function AdminStudentDetailScreen() {
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <StatusBar barStyle="light-content" backgroundColor={gc.color} />
 
-      {/* ── HEADER ── */}
       <View
         style={[
           styles.header,
@@ -607,7 +612,6 @@ export default function AdminStudentDetailScreen() {
         </View>
       </View>
 
-      {/* ── TABS ── */}
       <View style={styles.tabRow}>
         {(["profile", "classes", "subjects"] as ActiveTab[]).map((tab) => {
           const icons: Record<ActiveTab, any> = {
@@ -647,7 +651,6 @@ export default function AdminStudentDetailScreen() {
         })}
       </View>
 
-      {/* ══════════════════ PROFILE TAB ══════════════════ */}
       {activeTab === "profile" && (
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -738,7 +741,6 @@ export default function AdminStudentDetailScreen() {
         </ScrollView>
       )}
 
-      {/* ══════════════════ CLASSES TAB ══════════════════ */}
       {activeTab === "classes" && (
         <>
           <View style={styles.searchRow}>
@@ -857,7 +859,6 @@ export default function AdminStudentDetailScreen() {
         </>
       )}
 
-      {/* ══════════════════ SUBJECTS TAB ══════════════════ */}
       {activeTab === "subjects" && (
         <>
           <View style={styles.searchRow}>
@@ -985,7 +986,6 @@ export default function AdminStudentDetailScreen() {
         </>
       )}
 
-      {/* ── EDIT PROFILE MODAL ── */}
       <Modal
         visible={editModalVisible}
         animationType="slide"
@@ -1031,14 +1031,45 @@ export default function AdminStudentDetailScreen() {
               <Text style={styles.label}>
                 Date of birth <Text style={styles.required}>*</Text>
               </Text>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor="#9CA3AF"
-                value={formDob}
-                onChangeText={setFormDob}
-                keyboardType="numbers-and-punctuation"
-              />
+              <TouchableOpacity
+                style={styles.dateField}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={18}
+                  color={gc.color}
+                  style={{ marginRight: 10 }}
+                />
+                <Text
+                  style={[
+                    styles.dateFieldText,
+                    !formDob && { color: "#9CA3AF" },
+                  ]}
+                >
+                  {formDob ? formatDob(formDob) : "Select date of birth"}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color="#6B7280" />
+              </TouchableOpacity>
+
+              {showDatePicker && (
+                <DateTimePicker
+                  value={pickerDate}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  maximumDate={todayMax}
+                  onChange={onDateChange}
+                />
+              )}
+              {Platform.OS === "ios" && showDatePicker && (
+                <TouchableOpacity
+                  style={[styles.iosDoneBtn, { backgroundColor: gc.color }]}
+                  onPress={() => setShowDatePicker(false)}
+                >
+                  <Text style={styles.iosDoneText}>Done</Text>
+                </TouchableOpacity>
+              )}
 
               <Text style={styles.label}>
                 Gender <Text style={styles.required}>*</Text>
@@ -1117,7 +1148,6 @@ export default function AdminStudentDetailScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── ASSIGN CLASS MODAL ── */}
       <Modal
         visible={assignClassVisible}
         animationType="slide"
@@ -1153,7 +1183,6 @@ export default function AdminStudentDetailScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* study year */}
             <Text style={styles.label}>
               Study year <Text style={styles.required}>*</Text>
             </Text>
@@ -1165,7 +1194,6 @@ export default function AdminStudentDetailScreen() {
               onChangeText={setStudyYear}
             />
 
-            {/* class select */}
             <Text style={styles.label}>
               Class name <Text style={styles.required}>*</Text>
             </Text>
@@ -1306,7 +1334,6 @@ export default function AdminStudentDetailScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── ENROLL SUBJECT MODAL ── */}
       <Modal
         visible={assignSubjectVisible}
         animationType="slide"
@@ -1772,6 +1799,28 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
 
+  dateField: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 48,
+    marginBottom: 18,
+  },
+  dateFieldText: { flex: 1, fontSize: 14, color: "#111827" },
+  iosDoneBtn: {
+    alignSelf: "flex-end",
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    marginBottom: 18,
+    marginTop: -4,
+  },
+  iosDoneText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+
   genderRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
   genderOption: {
     flex: 1,
@@ -1798,7 +1847,6 @@ const styles = StyleSheet.create({
   },
   saveBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 
-  // select dropdown
   selectField: {
     flexDirection: "row",
     alignItems: "center",
