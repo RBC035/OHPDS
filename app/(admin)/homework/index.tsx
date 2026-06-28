@@ -18,23 +18,29 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { HomeworkService } from "../../../services/api/homeworkService";
+import { StudentTaskService } from "../../../services/api/studentTaskService";
+import { SubjectService } from "../../../services/api/subjectService";
+import { ClassService } from "../../../services/api/classService";
+
+type Status = "Pending" | "Submitted" | "Overdue";
 
 type Homework = {
   id: string;
+  numericId: number;
   title: string;
+  fileExt: string;
   subject: string;
   class: string;
-  teacher: string;
   dueDate: string;
-  status: "Pending" | "Submitted" | "Overdue";
-  totalStudents: number;
-  submitted: number;
+  endDateRaw: string;
+  status: Status;
+  submissionCount: number;
 };
 
-const STATUS_COLORS = {
-  Pending: { bg: "#FFF7ED", color: "#EA580C", border: "#FED7AA" },
-  Submitted: { bg: "#DCFCE7", color: "#16A34A", border: "#BBF7D0" },
-  Overdue: { bg: "#FEE2E2", color: "#DC2626", border: "#FECACA" },
+const STATUS_META: Record<Status, { bg: string; color: string; border: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  Pending:   { bg: "#FFF7ED", color: "#EA580C", border: "#FED7AA", icon: "time-outline" },
+  Submitted: { bg: "#DCFCE7", color: "#16A34A", border: "#BBF7D0", icon: "checkmark-circle-outline" },
+  Overdue:   { bg: "#FEE2E2", color: "#DC2626", border: "#FECACA", icon: "alert-circle-outline" },
 };
 
 const SUBJECT_COLORS: Record<string, { bg: string; color: string }> = {
@@ -49,229 +55,129 @@ const SUBJECT_COLORS: Record<string, { bg: string; color: string }> = {
   "Fine Art": { bg: "#FFF1E6", color: "#EA580C" },
 };
 
-function getSubjectColor(subject: string) {
-  return SUBJECT_COLORS[subject] ?? { bg: "#F3F4F6", color: "#6B7280" };
-}
-
-const INITIAL_HOMEWORK: Homework[] = [
-  {
-    id: "HW-001",
-    title: "Quadratic Equations",
-    subject: "Mathematics",
-    class: "Form One A",
-    teacher: "Mr. Hassan",
-    dueDate: "Jun 02, 2025",
-    status: "Submitted",
-    totalStudents: 38,
-    submitted: 35,
-  },
-  {
-    id: "HW-002",
-    title: "Newton's Laws",
-    subject: "Physics",
-    class: "Form Two A",
-    teacher: "Mr. Ali",
-    dueDate: "Jun 03, 2025",
-    status: "Pending",
-    totalStudents: 33,
-    submitted: 10,
-  },
-  {
-    id: "HW-003",
-    title: "Organic Chemistry",
-    subject: "Chemistry",
-    class: "Form Three A",
-    teacher: "Mrs. Zainab",
-    dueDate: "May 28, 2025",
-    status: "Overdue",
-    totalStudents: 30,
-    submitted: 18,
-  },
-  {
-    id: "HW-004",
-    title: "Shakespeare Essay",
-    subject: "English",
-    class: "Form One B",
-    teacher: "Mrs. Fatuma",
-    dueDate: "Jun 05, 2025",
-    status: "Pending",
-    totalStudents: 35,
-    submitted: 5,
-  },
-  {
-    id: "HW-005",
-    title: "Cell Biology",
-    subject: "Biology",
-    class: "Form Two B",
-    teacher: "Mr. Omar",
-    dueDate: "May 30, 2025",
-    status: "Overdue",
-    totalStudents: 32,
-    submitted: 20,
-  },
-  {
-    id: "HW-006",
-    title: "Trigonometry Problems",
-    subject: "Mathematics",
-    class: "Form Two B",
-    teacher: "Mr. Hassan",
-    dueDate: "Jun 04, 2025",
-    status: "Pending",
-    totalStudents: 32,
-    submitted: 0,
-  },
-  {
-    id: "HW-007",
-    title: "Kiswahili Insha",
-    subject: "Kiswahili",
-    class: "Form One A",
-    teacher: "Mrs. Maryam",
-    dueDate: "Jun 06, 2025",
-    status: "Pending",
-    totalStudents: 38,
-    submitted: 22,
-  },
-  {
-    id: "HW-008",
-    title: "World War II Summary",
-    subject: "History",
-    class: "Form Three A",
-    teacher: "Mr. Bakari",
-    dueDate: "May 25, 2025",
-    status: "Overdue",
-    totalStudents: 30,
-    submitted: 28,
-  },
-  {
-    id: "HW-009",
-    title: "Map Reading Exercise",
-    subject: "Geography",
-    class: "Form Three B",
-    teacher: "Mrs. Rehema",
-    dueDate: "Jun 07, 2025",
-    status: "Submitted",
-    totalStudents: 28,
-    submitted: 28,
-  },
-  {
-    id: "HW-010",
-    title: "Still Life Drawing",
-    subject: "Fine Art",
-    class: "Form One B",
-    teacher: "Mr. Juma",
-    dueDate: "Jun 08, 2025",
-    status: "Pending",
-    totalStudents: 35,
-    submitted: 12,
-  },
+const FALLBACK_SUBJECT_PALETTE = [
+  { bg: "#EEF4FF", color: "#2563EB" },
+  { bg: "#EDE9FE", color: "#7C3AED" },
+  { bg: "#DCFCE7", color: "#16A34A" },
+  { bg: "#FFF1E6", color: "#EA580C" },
+  { bg: "#FEE2E2", color: "#DC2626" },
+  { bg: "#FEF3C7", color: "#D97706" },
 ];
 
-const CLASS_LIST = [
-  "Form One A",
-  "Form One B",
-  "Form Two A",
-  "Form Two B",
-  "Form Three A",
-  "Form Three B",
-];
-const SUBJECT_LIST = Object.keys(SUBJECT_COLORS);
-
-function generateId() {
-  return "HW-" + String(Math.floor(Math.random() * 900) + 100);
+function subjectColor(subject: string) {
+  if (SUBJECT_COLORS[subject]) return SUBJECT_COLORS[subject];
+  let hash = 0;
+  for (let i = 0; i < subject.length; i++) hash = subject.charCodeAt(i) + ((hash << 5) - hash);
+  return FALLBACK_SUBJECT_PALETTE[Math.abs(hash) % FALLBACK_SUBJECT_PALETTE.length];
 }
+
+function fileMeta(path: string) {
+  const ext = (path ?? "").split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return { icon: "document-text" as const, color: "#DC2626", bg: "#FEE2E2", label: "PDF" };
+  if (ext === "ppt" || ext === "pptx") return { icon: "easel" as const, color: "#EA580C", bg: "#FFF1E6", label: ext.toUpperCase() };
+  if (ext === "doc" || ext === "docx") return { icon: "document" as const, color: "#2563EB", bg: "#EEF4FF", label: ext.toUpperCase() };
+  return { icon: "attach" as const, color: "#6B7280", bg: "#F3F4F6", label: "FILE" };
+}
+
+const TABS: ("All" | Status)[] = ["All", "Pending", "Submitted", "Overdue"];
 
 export default function AdminHomeworkScreen() {
   const insets = useSafeAreaInsets();
 
   const [homework, setHomework] = useState<Homework[]>([]);
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("All");
+  const [filterStatus, setFilterStatus] = useState<"All" | Status>("All");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // admin view-only: no local form state
-
-  const filtered = homework.filter((h) => {
-    const matchSearch =
-      h.title.toLowerCase().includes(search.toLowerCase()) ||
-      h.subject.toLowerCase().includes(search.toLowerCase()) ||
-      h.class.toLowerCase().includes(search.toLowerCase()) ||
-      h.teacher.toLowerCase().includes(search.toLowerCase()) ||
-      h.id.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === "All" || h.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
-
-  const pendingCount = homework.filter((h) => h.status === "Pending").length;
-  const submittedCount = homework.filter(
-    (h) => h.status === "Submitted",
-  ).length;
-  const overdueCount = homework.filter((h) => h.status === "Overdue").length;
 
   const toArr = (res: any): any[] => {
     const d = res?.data?.data ?? res?.data;
     return Array.isArray(d) ? d : [];
   };
 
-  const mapApiHw = (item: any): Homework => ({
-    id: String(
-      item.id ??
-        item._id ??
-        item.hwId ??
-        item.homeworkId ??
-        item.externalId ??
-        "",
-    ),
-    title: (() => {
-      const t = item.title ?? item.name ?? "";
-      const hw = item.homework ?? "";
-      const ext = hw.split(".").pop()?.toLowerCase() ?? "";
-      return t ? (ext ? `${t}.${ext}` : t) : hw;
-    })(),
-    subject: item.subject?.name ?? item.subject ?? "General",
-    class: item.class?.name ?? item.class ?? item.className ?? "",
-    teacher: item.teacher?.name ?? item.teacher ?? "",
-    dueDate: item.endDate
-      ? new Date(item.endDate).toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        })
-      : (item.dueDate ?? item.due ?? ""),
-    status: ((): Homework["status"] => {
-      const s = String(item.status ?? item.state ?? "").toLowerCase();
-      if (s.includes("submi")) return "Submitted";
-      if (s.includes("over")) return "Overdue";
-      const endDate = item.endDate ?? item.dueDate ?? item.due;
-      if (endDate) {
-        const end = new Date(endDate);
-        if (!isNaN(end.getTime()) && end < new Date()) return "Overdue";
-      }
-      return "Pending";
-    })(),
-    totalStudents: Number(item.totalStudents ?? item.total_students ?? 0),
-    submitted: Number(item.submitted ?? item.submissions ?? 0),
-  });
-
   const loadData = useCallback(async () => {
     try {
       if (!refreshing) setLoading(true);
-      const res = await HomeworkService.getAll();
-      const raw = toArr(res);
-      let arr: Homework[] = [];
-      try {
-        arr = raw.map(mapApiHw);
-      } catch (e) {
-        console.error("Mapping homework items failed", e);
-        arr = [];
-      }
+
+      const [hwRes, taskRes, subjRes, clsRes] = await Promise.all([
+        HomeworkService.getAll(),
+        StudentTaskService.getAll(),
+        SubjectService.getAll(),
+        ClassService.getAll(),
+      ]);
+
+      const rawHw = toArr(hwRes);
+      const rawTasks = toArr(taskRes);
+      const subjects = toArr(subjRes);
+      const classes = toArr(clsRes);
+
+      const subjectNameById = new Map<string, string>(
+        subjects.map((s: any) => [String(s.id), s.name ?? `Subject #${s.id}`]),
+      );
+      const classNameById = new Map<string, string>(
+        classes.map((c: any) => [String(c.id), c.name ?? `Class #${c.id}`]),
+      );
+
+      // homeworkId -> submission count
+      const submissionCountByHw = new Map<string, number>();
+      rawTasks.forEach((t: any) => {
+        const key = String(t.homeworkId);
+        submissionCountByHw.set(key, (submissionCountByHw.get(key) ?? 0) + 1);
+      });
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      let arr: Homework[] = rawHw.map((item: any): Homework => {
+        const fileExt = item.homework ?? "";
+        const subjName =
+          subjectNameById.get(String(item.subjectId)) ??
+          item.subject?.name ?? item.subject ?? "General";
+        const clsName =
+          classNameById.get(String(item.classId)) ??
+          item.class?.name ?? item.className ?? "";
+
+        const count = submissionCountByHw.get(String(item.id)) ?? 0;
+
+        // Status: Submitted if anyone submitted; else Overdue if past end; else Pending
+        let status: Status;
+        if (count > 0) {
+          status = "Submitted";
+        } else {
+          const end = item.endDate ? new Date(item.endDate) : null;
+          if (end) end.setHours(0, 0, 0, 0);
+          status = end && end < today ? "Overdue" : "Pending";
+        }
+
+        const title = (() => {
+          const t = item.title ?? item.name ?? "";
+          const ext = fileExt.split(".").pop()?.toLowerCase() ?? "";
+          return t ? (ext ? `${t}.${ext}` : t) : fileExt;
+        })();
+
+        return {
+          id: String(item.id ?? ""),
+          numericId: Number(item.id ?? 0),
+          title,
+          fileExt,
+          subject: subjName,
+          class: clsName,
+          dueDate: item.endDate
+            ? new Date(item.endDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+            : "",
+          endDateRaw: item.endDate ?? "",
+          status,
+          submissionCount: count,
+        };
+      });
+
+      // newest first (higher id = newer)
+      arr.sort((a, b) => b.numericId - a.numericId);
+
       setHomework(arr);
     } catch (err) {
       console.error("Failed to load homeworks", err);
-      Alert.alert(
-        "Unable to load homeworks",
-        "Please check your connection and try again.",
-      );
+      Alert.alert("Unable to load homeworks", "Please check your connection and try again.");
       setHomework([]);
     } finally {
       setLoading(false);
@@ -279,73 +185,80 @@ export default function AdminHomeworkScreen() {
     }
   }, [refreshing]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  function onRefresh() {
-    setRefreshing(true);
-    loadData();
-  }
+  function onRefresh() { setRefreshing(true); loadData(); }
 
-  // Admin is view-only for homework: no create/edit/delete handlers
+  const filtered = homework.filter((h) => {
+    const q = search.toLowerCase();
+    const matchSearch =
+      h.title.toLowerCase().includes(q) ||
+      h.subject.toLowerCase().includes(q) ||
+      h.class.toLowerCase().includes(q);
+    const matchStatus = filterStatus === "All" || h.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const totalCount = homework.length;
+  const pendingCount = homework.filter((h) => h.status === "Pending").length;
+  const submittedCount = homework.filter((h) => h.status === "Submitted").length;
+  const overdueCount = homework.filter((h) => h.status === "Overdue").length;
+
+  const tabCount = (t: "All" | Status) =>
+    t === "All" ? totalCount
+      : t === "Pending" ? pendingCount
+      : t === "Submitted" ? submittedCount
+      : overdueCount;
 
   return (
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#D97706" />
+      <StatusBar barStyle="light-content" backgroundColor="#B45309" />
 
-      {/* ── HEADER ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+      {/* HEADER */}
+      <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <View style={styles.headerTop}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backBtn}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.8}>
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.headerKicker}>Admin · School-wide</Text>
             <Text style={styles.headerTitle}>Homework</Text>
-            <Text style={styles.headerSub}>Manage all school homework</Text>
           </View>
-          {/* admin view-only: no add button */}
+          <View style={styles.headerIconBox}>
+            <Ionicons name="clipboard-outline" size={22} color="#B45309" />
+          </View>
         </View>
 
         {/* stats strip */}
         <View style={styles.statsStrip}>
           <View style={styles.stripItem}>
-            <Text style={styles.stripNum}>{homework.length}</Text>
+            <Text style={styles.stripNum}>{totalCount}</Text>
             <Text style={styles.stripLabel}>Total</Text>
           </View>
           <View style={styles.stripDivider} />
           <View style={styles.stripItem}>
-            <Text style={styles.stripNum}>{pendingCount}</Text>
+            <Text style={[styles.stripNum, { color: "#FED7AA" }]}>{pendingCount}</Text>
             <Text style={styles.stripLabel}>Pending</Text>
           </View>
           <View style={styles.stripDivider} />
           <View style={styles.stripItem}>
-            <Text style={styles.stripNum}>{submittedCount}</Text>
+            <Text style={[styles.stripNum, { color: "#BBF7D0" }]}>{submittedCount}</Text>
             <Text style={styles.stripLabel}>Submitted</Text>
           </View>
           <View style={styles.stripDivider} />
           <View style={styles.stripItem}>
-            <Text style={styles.stripNum}>{overdueCount}</Text>
+            <Text style={[styles.stripNum, { color: "#FECACA" }]}>{overdueCount}</Text>
             <Text style={styles.stripLabel}>Overdue</Text>
           </View>
         </View>
       </View>
 
-      {/* ── SEARCH ── */}
+      {/* SEARCH */}
       <View style={styles.searchWrap}>
-        <Ionicons
-          name="search-outline"
-          size={17}
-          color="#9CA3AF"
-          style={{ marginRight: 8 }}
-        />
+        <Ionicons name="search-outline" size={17} color="#9CA3AF" style={{ marginRight: 8 }} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by title, subject, class or teacher..."
+          placeholder="Search title, subject or class..."
           placeholderTextColor="#9CA3AF"
           value={search}
           onChangeText={setSearch}
@@ -357,76 +270,63 @@ export default function AdminHomeworkScreen() {
         )}
       </View>
 
-      {/* ── FILTER CHIPS ── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {["All", "Pending", "Submitted", "Overdue"].map((st) => {
-          const active = filterStatus === st;
-          const sc =
-            st !== "All"
-              ? STATUS_COLORS[st as keyof typeof STATUS_COLORS]
-              : null;
+      {/* TABS */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+        {TABS.map((t) => {
+          const active = filterStatus === t;
+          const meta = t !== "All" ? STATUS_META[t] : null;
+          const activeBg = meta?.color ?? "#B45309";
           return (
             <TouchableOpacity
-              key={st}
-              style={[
-                styles.filterChip,
-                active && {
-                  backgroundColor: sc?.color ?? "#111827",
-                  borderColor: sc?.color ?? "#111827",
-                },
-              ]}
-              onPress={() => setFilterStatus(st)}
-              activeOpacity={0.8}
+              key={t}
+              style={[styles.filterChip, active && { backgroundColor: activeBg, borderColor: activeBg }]}
+              onPress={() => setFilterStatus(t)}
+              activeOpacity={0.85}
             >
-              <Text
-                style={[styles.filterChipText, active && { color: "#fff" }]}
-              >
-                {st === "All" ? "All homework" : st}
+              {meta && (
+                <Ionicons
+                  name={meta.icon}
+                  size={13}
+                  color={active ? "#fff" : meta.color}
+                  style={{ marginRight: 5 }}
+                />
+              )}
+              <Text style={[styles.filterChipText, active && { color: "#fff" }]}>
+                {t === "All" ? "All" : t}
               </Text>
+              <View style={[styles.chipCount, active && { backgroundColor: "rgba(255,255,255,0.25)" }]}>
+                <Text style={[styles.chipCountText, active && { color: "#fff" }]}>{tabCount(t)}</Text>
+              </View>
             </TouchableOpacity>
           );
         })}
       </ScrollView>
 
-      {/* ── LIST ── */}
+      {/* LIST */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#B45309" />}
       >
         {loading ? (
-          <View style={{ paddingTop: 40 }}>
-            <ActivityIndicator size="large" color="#D97706" />
+          <View style={{ paddingTop: 50 }}>
+            <ActivityIndicator size="large" color="#B45309" />
+          </View>
+        ) : filtered.length === 0 ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="clipboard-outline" size={32} color="#9CA3AF" />
+            </View>
+            <Text style={styles.emptyTitle}>No homework found</Text>
+            <Text style={styles.emptySub}>
+              {filterStatus === "All" ? "Nothing matches your search" : `No ${filterStatus.toLowerCase()} homework`}
+            </Text>
           </View>
         ) : (
-          filtered.length === 0 && (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIcon}>
-                <Ionicons name="clipboard-outline" size={32} color="#9CA3AF" />
-              </View>
-              <Text style={styles.emptyTitle}>No homework found</Text>
-              <Text style={styles.emptySub}>
-                Try a different search or add new homework
-              </Text>
-            </View>
-          )
-        )}
-
-        {!loading &&
           filtered.map((h) => {
-            const sc = getSubjectColor(h.subject);
-            const st = STATUS_COLORS[h.status] ?? STATUS_COLORS.Pending;
-            const pct =
-              h.totalStudents > 0
-                ? Math.round((h.submitted / h.totalStudents) * 100)
-                : 0;
-
+            const sc = subjectColor(h.subject);
+            const sm = STATUS_META[h.status];
+            const fm = fileMeta(h.fileExt);
             return (
               <TouchableOpacity
                 key={h.id}
@@ -434,94 +334,58 @@ export default function AdminHomeworkScreen() {
                 activeOpacity={0.85}
                 onPress={() => router.push(`/(admin)/homework/${h.id}` as any)}
               >
-                {/* top accent */}
-                <View
-                  style={[styles.cardAccent, { backgroundColor: sc.color }]}
-                />
-
+                <View style={[styles.cardAccent, { backgroundColor: sc.color }]} />
                 <View style={styles.cardBody}>
-                  {/* title + status */}
+                  {/* top: file icon + title + status */}
                   <View style={styles.cardTopRow}>
-                    <Text style={styles.cardTitle} numberOfLines={1}>
-                      {h.title}
-                    </Text>
-                    <View
-                      style={[
-                        styles.statusPill,
-                        { backgroundColor: st.bg, borderColor: st.border },
-                      ]}
-                    >
-                      <Text style={[styles.statusText, { color: st.color }]}>
-                        {h.status}
-                      </Text>
+                    <View style={[styles.fileIcon, { backgroundColor: fm.bg }]}>
+                      <Ionicons name={`${fm.icon}-outline` as any} size={18} color={fm.color} />
+                    </View>
+                    <Text style={styles.cardTitle} numberOfLines={1}>{h.title}</Text>
+                    <View style={[styles.statusPill, { backgroundColor: sm.bg, borderColor: sm.border }]}>
+                      <Ionicons name={sm.icon} size={11} color={sm.color} />
+                      <Text style={[styles.statusText, { color: sm.color }]}> {h.status}</Text>
                     </View>
                   </View>
 
                   {/* subject + class */}
                   <View style={styles.metaRow}>
-                    <View
-                      style={[styles.subjectPill, { backgroundColor: sc.bg }]}
-                    >
-                      <Text style={[styles.subjectText, { color: sc.color }]}>
-                        {h.subject}
-                      </Text>
+                    <View style={[styles.subjectPill, { backgroundColor: sc.bg }]}>
+                      <Text style={[styles.subjectText, { color: sc.color }]}>{h.subject}</Text>
                     </View>
                     <Text style={styles.metaDot}>·</Text>
                     <Ionicons name="school-outline" size={12} color="#9CA3AF" />
-                    <Text style={styles.metaText}> {h.class}</Text>
+                    <Text style={styles.metaText}> {h.class || "—"}</Text>
                   </View>
 
-                  {/* teacher + due */}
-                  <View style={styles.metaRow}>
-                    <Ionicons name="person-outline" size={12} color="#9CA3AF" />
-                    <Text style={styles.metaText}> {h.teacher}</Text>
-                    <Text style={styles.metaDot}>·</Text>
-                    <Ionicons
-                      name="calendar-outline"
-                      size={12}
-                      color="#9CA3AF"
-                    />
-                    <Text style={styles.metaText}> {h.dueDate}</Text>
-                  </View>
-
-                  {/* submission progress */}
-                  <View style={styles.progressWrap}>
-                    <View style={styles.progressBg}>
-                      <View
-                        style={[
-                          styles.progressFill,
-                          {
-                            width: `${pct}%` as any,
-                            backgroundColor: sc.color,
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text style={[styles.progressLabel, { color: sc.color }]}>
-                      {h.submitted}/{h.totalStudents} submitted
-                    </Text>
-                  </View>
-
-                  {/* id + actions */}
+                  {/* due + submissions */}
                   <View style={styles.cardBottom}>
-                    <Text style={styles.hwId}>{h.id}</Text>
-                    <View style={styles.cardActions}>
-                      {/* admin view-only: no edit/delete actions */}
+                    <View style={styles.bottomItem}>
+                      <Ionicons name="calendar-outline" size={12} color="#9CA3AF" />
+                      <Text style={styles.metaText}> Due {h.dueDate || "—"}</Text>
+                    </View>
+                    <View style={[styles.subCountPill, { backgroundColor: h.submissionCount > 0 ? "#DCFCE7" : "#F3F4F6" }]}>
+                      <Ionicons
+                        name="people-outline"
+                        size={12}
+                        color={h.submissionCount > 0 ? "#16A34A" : "#9CA3AF"}
+                      />
+                      <Text style={[styles.subCountText, { color: h.submissionCount > 0 ? "#16A34A" : "#9CA3AF" }]}>
+                        {" "}{h.submissionCount} submission{h.submissionCount !== 1 ? "s" : ""}
+                      </Text>
                     </View>
                   </View>
                 </View>
-
                 <View style={styles.cardChevron}>
                   <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
                 </View>
               </TouchableOpacity>
             );
-          })}
+          })
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* admin view-only: no modal or edit UI */}
     </SafeAreaView>
   );
 }
@@ -530,257 +394,98 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F7FB" },
 
   header: {
-    backgroundColor: "#D97706",
+    backgroundColor: "#B45309",
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 22,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
   },
   headerTop: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: "rgba(255,255,255,0.18)",
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "center", alignItems: "center",
   },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: "#fff" },
-  headerSub: { fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: 1 },
-  addBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
+  headerKicker: { fontSize: 11, color: "rgba(255,255,255,0.7)", fontWeight: "600", marginBottom: 1 },
+  headerTitle: { fontSize: 24, fontWeight: "900", color: "#fff" },
+  headerIconBox: {
+    width: 44, height: 44, borderRadius: 13, backgroundColor: "#fff",
+    justifyContent: "center", alignItems: "center",
   },
 
   statsStrip: {
     flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 12,
+    backgroundColor: "rgba(0,0,0,0.12)",
+    borderRadius: 14,
     paddingVertical: 14,
   },
   stripItem: { flex: 1, alignItems: "center" },
-  stripNum: { fontSize: 18, fontWeight: "800", color: "#fff" },
-  stripLabel: { fontSize: 10, color: "rgba(255,255,255,0.7)", marginTop: 2 },
-  stripDivider: {
-    width: 1,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    marginVertical: 4,
-  },
+  stripNum: { fontSize: 19, fontWeight: "800", color: "#fff" },
+  stripLabel: { fontSize: 10, color: "rgba(255,255,255,0.75)", marginTop: 2, fontWeight: "600" },
+  stripDivider: { width: 1, backgroundColor: "rgba(255,255,255,0.2)", marginVertical: 4 },
 
   searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row", alignItems: "center",
     backgroundColor: "#fff",
-    margin: 16,
-    marginBottom: 8,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
+    marginHorizontal: 16, marginTop: 16, marginBottom: 8,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    borderWidth: 1, borderColor: "#E5E7EB",
+    shadowColor: "#000", shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
   },
   searchInput: { flex: 1, fontSize: 14, color: "#111827" },
 
-  filterRow: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 8,
-    flexDirection: "row",
-  },
+  filterRow: { paddingHorizontal: 16, paddingBottom: 12, gap: 8, flexDirection: "row" },
   filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#fff",
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 22, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#fff",
   },
-  filterChipText: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
+  filterChipText: { fontSize: 12.5, fontWeight: "700", color: "#6B7280" },
+  chipCount: {
+    marginLeft: 6, minWidth: 20, paddingHorizontal: 5, height: 18, borderRadius: 9,
+    backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center",
+  },
+  chipCountText: { fontSize: 10, fontWeight: "800", color: "#6B7280" },
 
   scroll: { paddingHorizontal: 16, paddingTop: 4 },
 
   card: {
     backgroundColor: "#fff",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginBottom: 12,
-    overflow: "hidden",
-    flexDirection: "row",
+    borderRadius: 16,
+    borderWidth: 1, borderColor: "#EEF0F4",
+    marginBottom: 12, overflow: "hidden", flexDirection: "row",
+    shadowColor: "#1E293B", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 3 }, shadowRadius: 10, elevation: 2,
   },
   cardAccent: { width: 4 },
   cardBody: { flex: 1, padding: 14 },
-  cardChevron: { justifyContent: "center", paddingRight: 12 },
+  cardChevron: { justifyContent: "center", paddingRight: 10 },
 
-  cardTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-    flexWrap: "wrap",
-  },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: "#111827", flex: 1 },
+  cardTopRow: { flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 10 },
+  fileIcon: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+  cardTitle: { fontSize: 14.5, fontWeight: "800", color: "#111827", flex: 1 },
 
   statusPill: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    flexDirection: "row", alignItems: "center",
+    borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, flexShrink: 0,
   },
-  statusText: { fontSize: 11, fontWeight: "700" },
+  statusText: { fontSize: 10.5, fontWeight: "800" },
 
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 4,
-    flexWrap: "wrap",
-  },
-  subjectPill: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
-  subjectText: { fontSize: 11, fontWeight: "600" },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 12, flexWrap: "wrap" },
+  subjectPill: { borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3 },
+  subjectText: { fontSize: 11, fontWeight: "700" },
   metaDot: { fontSize: 11, color: "#D1D5DB" },
   metaText: { fontSize: 12, color: "#6B7280" },
 
-  progressWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  progressBg: {
-    flex: 1,
-    height: 5,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 3,
-  },
-  progressFill: { height: 5, borderRadius: 3 },
-  progressLabel: { fontSize: 10, fontWeight: "600" },
-
-  cardBottom: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  hwId: { fontSize: 11, color: "#9CA3AF" },
-  cardActions: { flexDirection: "row", alignItems: "center", gap: 6 },
-  actionEdit: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#FEF3C7",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  actionEditText: { fontSize: 12, fontWeight: "600", color: "#D97706" },
-  actionDelete: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: "#FEE2E2",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  cardBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  bottomItem: { flexDirection: "row", alignItems: "center" },
+  subCountPill: { flexDirection: "row", alignItems: "center", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5 },
+  subCountText: { fontSize: 11, fontWeight: "700" },
 
   emptyState: { alignItems: "center", paddingTop: 60 },
   emptyIcon: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: "#F3F4F6",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 14,
+    width: 70, height: 70, borderRadius: 35, backgroundColor: "#F3F4F6",
+    justifyContent: "center", alignItems: "center", marginBottom: 14,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#374151",
-    marginBottom: 6,
-  },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: "#374151", marginBottom: 6 },
   emptySub: { fontSize: 13, color: "#9CA3AF", textAlign: "center" },
-
-  overlay: { flex: 1, justifyContent: "flex-end" },
-  overlayBg: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  sheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    maxHeight: "92%",
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#E5E7EB",
-    alignSelf: "center",
-    marginBottom: 20,
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 22,
-  },
-  sheetTitle: { fontSize: 18, fontWeight: "800", color: "#111827" },
-  sheetSub: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
-  closeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#F3F4F6",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  label: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 8 },
-  required: { color: "#DC2626" },
-  optional: { color: "#9CA3AF", fontWeight: "400" },
-
-  input: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: "#111827",
-    marginBottom: 18,
-  },
-
-  pickerChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1.5,
-  },
-  pickerChipText: { fontSize: 13, fontWeight: "600" },
-
-  statusRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
-  statusOption: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    alignItems: "center",
-  },
-  statusOptionText: { fontSize: 13, fontWeight: "600" },
-
-  saveBtn: {
-    backgroundColor: "#D97706",
-    borderRadius: 12,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  saveBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });
