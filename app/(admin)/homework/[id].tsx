@@ -90,14 +90,24 @@ const AVATAR_PALETTE = [
 ];
 
 function getInitials(name: string) {
-  return (name ?? "").trim().split(" ").filter(Boolean).slice(0, 2).map((n) => n[0]?.toUpperCase() ?? "").join("");
+  return (name ?? "")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function formatSubmitDate(d: string) {
   if (!d) return "—";
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return d;
-  return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return dt.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 type ActiveTab = "submissions" | "pending";
@@ -115,7 +125,9 @@ export default function AdminHomeworkDetailScreen() {
   // homework file preview
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewHeaders, setPreviewHeaders] = useState<Record<string, string> | undefined>(undefined);
+  const [previewHeaders, setPreviewHeaders] = useState<
+    Record<string, string> | undefined
+  >(undefined);
 
   // per-student image gallery
   const [studentDetail, setStudentDetail] = useState<RosterEntry | null>(null);
@@ -141,31 +153,48 @@ export default function AdminHomeworkDetailScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      if (!id) { setHwInfo(null); return; }
+      if (!id) {
+        setHwInfo(null);
+        return;
+      }
       const n = Number(id);
       const res = await HomeworkService.getOne(n as any);
       const item: any = res?.data?.data ?? res?.data ?? null;
-      if (!item) { setHwInfo(null); return; }
+      if (!item) {
+        setHwInfo(null);
+        return;
+      }
 
       // Resolve subject + class names, build roster, fetch tasks — all in parallel
-      const [subjectCatRes, classCatRes, taskRes, classRes, subjRes, studentsRes] =
-        await Promise.all([
-          SubjectService.getAll(),
-          ClassService.getAll(),
-          StudentTaskService.getByHomework(n),
-          StudentClassService.getByClass(item.classId),
-          StudentSubjectService.getBySubject(item.subjectId),
-          StudentService.getAll(),
-        ]);
+      const [
+        subjectCatRes,
+        classCatRes,
+        taskRes,
+        classRes,
+        subjRes,
+        studentsRes,
+      ] = await Promise.all([
+        SubjectService.getAll(),
+        ClassService.getAll(),
+        StudentTaskService.getByHomework(n),
+        StudentClassService.getByClass(item.classId),
+        StudentSubjectService.getBySubject(item.subjectId),
+        StudentService.getAll(),
+      ]);
 
-      const subjectCat: any[] = subjectCatRes.data?.data ?? subjectCatRes.data ?? [];
+      const subjectCat: any[] =
+        subjectCatRes.data?.data ?? subjectCatRes.data ?? [];
       const classCat: any[] = classCatRes.data?.data ?? classCatRes.data ?? [];
       const subjName =
         subjectCat.find((s) => String(s.id) === String(item.subjectId))?.name ??
-        item.subject?.name ?? item.subject ?? "General";
+        item.subject?.name ??
+        item.subject ??
+        "General";
       const clsName =
         classCat.find((c) => String(c.id) === String(item.classId))?.name ??
-        item.class?.name ?? item.className ?? `Class #${item.classId}`;
+        item.class?.name ??
+        item.className ??
+        `Class #${item.classId}`;
 
       const title = (() => {
         const t = item.title ?? "";
@@ -190,7 +219,11 @@ export default function AdminHomeworkDetailScreen() {
         subject: subjName,
         class: clsName,
         dueDate: item.endDate
-          ? new Date(item.endDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+          ? new Date(item.endDate).toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })
           : "",
         endDateRaw: item.endDate ?? "",
         description: item.description ?? "",
@@ -210,14 +243,22 @@ export default function AdminHomeworkDetailScreen() {
 
       const classRows: any[] = classRes.data?.data ?? classRes.data ?? [];
       const subjRows: any[] = subjRes.data?.data ?? subjRes.data ?? [];
-      const allStudents: any[] = studentsRes.data?.data ?? studentsRes.data ?? [];
+      const allStudents: any[] =
+        studentsRes.data?.data ?? studentsRes.data ?? [];
 
-      const classIds = new Set(classRows.map((r) => String(r.stuentId ?? r.studentId)));
-      const subjIds = new Set(subjRows.map((r) => String(r.stuentId ?? r.studentId)));
+      const classIds = new Set(
+        classRows.map((r) => String(r.stuentId ?? r.studentId)),
+      );
+      const subjIds = new Set(
+        subjRows.map((r) => String(r.stuentId ?? r.studentId)),
+      );
       const rosterIds = [...classIds].filter((sid) => subjIds.has(sid));
 
       const nameById = new Map<string, string>(
-        allStudents.map((s: any) => [String(s.id), s.name ?? `Student #${s.id}`]),
+        allStudents.map((s: any) => [
+          String(s.id),
+          s.name ?? `Student #${s.id}`,
+        ]),
       );
 
       const tasksByStudent = new Map<string, StudentTask[]>();
@@ -231,16 +272,25 @@ export default function AdminHomeworkDetailScreen() {
       const endDate = item.endDate ? new Date(item.endDate) : null;
       const built: RosterEntry[] = rosterIds.map((sid) => {
         const studentTasks = (tasksByStudent.get(sid) ?? []).sort(
-          (a, b) => new Date(a.submitDate).getTime() - new Date(b.submitDate).getTime(),
+          (a, b) =>
+            new Date(a.submitDate).getTime() - new Date(b.submitDate).getTime(),
         );
         const submitted = studentTasks.length > 0;
         let submitDate: string | undefined;
         let onTime: boolean | undefined;
         if (submitted) {
           submitDate = studentTasks[0].submitDate;
-          if (endDate && submitDate) onTime = new Date(submitDate).getTime() <= endDate.getTime();
+          if (endDate && submitDate)
+            onTime = new Date(submitDate).getTime() <= endDate.getTime();
         }
-        return { studentId: Number(sid), name: nameById.get(sid) ?? `Student #${sid}`, submitted, submitDate, onTime, tasks: studentTasks };
+        return {
+          studentId: Number(sid),
+          name: nameById.get(sid) ?? `Student #${sid}`,
+          submitted,
+          submitDate,
+          onTime,
+          tasks: studentTasks,
+        };
       });
       built.sort((a, b) => a.name.localeCompare(b.name));
       setRoster(built);
@@ -252,19 +302,29 @@ export default function AdminHomeworkDetailScreen() {
     }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function openHomeworkPreview() {
-    if (!hwInfo?.homework) { setPreviewUrl(null); setPreviewVisible(true); return; }
+    if (!hwInfo?.homework) {
+      setPreviewUrl(null);
+      setPreviewVisible(true);
+      return;
+    }
     try {
       const url = resolveFileUrl(hwInfo.homework)!;
       const ext = hwInfo.homework.split(".").pop()?.toLowerCase() ?? "";
       if (["pdf", "doc", "docx", "ppt", "pptx"].includes(ext)) {
         setPreviewHeaders(undefined);
-        setPreviewUrl(`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`);
+        setPreviewUrl(
+          `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`,
+        );
       } else {
         const token = await AsyncStorage.getItem("token");
-        setPreviewHeaders(token ? { Authorization: `Bearer ${token}` } : undefined);
+        setPreviewHeaders(
+          token ? { Authorization: `Bearer ${token}` } : undefined,
+        );
         setPreviewUrl(url);
       }
       setPreviewVisible(true);
@@ -286,7 +346,11 @@ export default function AdminHomeworkDetailScreen() {
         <StatusBar barStyle="light-content" backgroundColor="#D97706" />
         <View style={styles.errorBox}>
           <ActivityIndicator size="large" color="#D97706" />
-          <Text style={[styles.errorText, { color: "#9CA3AF", fontWeight: "500" }]}>Loading homework…</Text>
+          <Text
+            style={[styles.errorText, { color: "#9CA3AF", fontWeight: "500" }]}
+          >
+            Loading homework…
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -298,7 +362,10 @@ export default function AdminHomeworkDetailScreen() {
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={40} color="#DC2626" />
           <Text style={styles.errorText}>Homework not found</Text>
-          <TouchableOpacity onPress={() => router.back()} style={styles.errorBtn}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.errorBtn}
+          >
             <Text style={styles.errorBtnText}>Go back</Text>
           </TouchableOpacity>
         </View>
@@ -326,28 +393,56 @@ export default function AdminHomeworkDetailScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#D97706" />
 
       {/* HEADER */}
-      <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: sc.color }]}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + 12, backgroundColor: sc.color },
+        ]}
+      >
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            activeOpacity={0.8}
+          >
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.headerTitle} numberOfLines={1}>{hwInfo.title}</Text>
-            <Text style={styles.headerSub}>{hwInfo.subject} · {hwInfo.class}</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {hwInfo.title}
+            </Text>
+            <Text style={styles.headerSub}>
+              {hwInfo.subject} · {hwInfo.class}
+            </Text>
           </View>
-          <View style={[styles.statusBadge, { borderColor: "rgba(255,255,255,0.3)" }]}>
+          <View
+            style={[
+              styles.statusBadge,
+              { borderColor: "rgba(255,255,255,0.3)" },
+            ]}
+          >
             <Text style={styles.statusBadgeText}>{hwInfo.status}</Text>
           </View>
         </View>
 
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
-            <Ionicons name="calendar-outline" size={13} color="rgba(255,255,255,0.75)" />
+            <Ionicons
+              name="calendar-outline"
+              size={13}
+              color="rgba(255,255,255,0.75)"
+            />
             <Text style={styles.infoText}>Due {hwInfo.dueDate}</Text>
           </View>
-          {hwInfo.description ? <Text style={styles.description}>{hwInfo.description}</Text> : null}
+          {hwInfo.description ? (
+            <Text style={styles.description}>{hwInfo.description}</Text>
+          ) : null}
           {hwInfo.homework ? (
-            <TouchableOpacity style={styles.previewBtn} onPress={openHomeworkPreview} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.previewBtn}
+              onPress={openHomeworkPreview}
+              activeOpacity={0.8}
+            >
               <Ionicons name="eye-outline" size={14} color="#fff" />
               <Text style={styles.previewBtnText}>Preview Homework File</Text>
             </TouchableOpacity>
@@ -389,21 +484,45 @@ export default function AdminHomeworkDetailScreen() {
       <View style={styles.tabRow}>
         <TouchableOpacity
           style={[styles.tab, activeTab === "submissions" && styles.tabActive]}
-          onPress={() => { setActiveTab("submissions"); setSearch(""); }}
+          onPress={() => {
+            setActiveTab("submissions");
+            setSearch("");
+          }}
           activeOpacity={0.8}
         >
-          <Ionicons name="checkmark-circle-outline" size={16} color={activeTab === "submissions" ? sc.color : "#9CA3AF"} />
-          <Text style={[styles.tabLabel, activeTab === "submissions" && { color: sc.color }]}>
+          <Ionicons
+            name="checkmark-circle-outline"
+            size={16}
+            color={activeTab === "submissions" ? sc.color : "#9CA3AF"}
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              activeTab === "submissions" && { color: sc.color },
+            ]}
+          >
             Submitted ({submittedList.length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === "pending" && styles.tabActive]}
-          onPress={() => { setActiveTab("pending"); setSearch(""); }}
+          onPress={() => {
+            setActiveTab("pending");
+            setSearch("");
+          }}
           activeOpacity={0.8}
         >
-          <Ionicons name="time-outline" size={16} color={activeTab === "pending" ? "#EA580C" : "#9CA3AF"} />
-          <Text style={[styles.tabLabel, activeTab === "pending" && { color: "#EA580C" }]}>
+          <Ionicons
+            name="time-outline"
+            size={16}
+            color={activeTab === "pending" ? "#EA580C" : "#9CA3AF"}
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              activeTab === "pending" && { color: "#EA580C" },
+            ]}
+          >
             Not submitted ({pendingList.length})
           </Text>
         </TouchableOpacity>
@@ -411,10 +530,19 @@ export default function AdminHomeworkDetailScreen() {
 
       {/* SEARCH */}
       <View style={styles.searchWrap}>
-        <Ionicons name="search-outline" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+        <Ionicons
+          name="search-outline"
+          size={16}
+          color="#9CA3AF"
+          style={{ marginRight: 8 }}
+        />
         <TextInput
           style={styles.searchInput}
-          placeholder={activeTab === "submissions" ? "Search submitted students..." : "Search pending students..."}
+          placeholder={
+            activeTab === "submissions"
+              ? "Search submitted students..."
+              : "Search pending students..."
+          }
           placeholderTextColor="#9CA3AF"
           value={search}
           onChangeText={setSearch}
@@ -427,17 +555,26 @@ export default function AdminHomeworkDetailScreen() {
       </View>
 
       {/* LIST */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+      >
         {/* SUBMITTED */}
         {activeTab === "submissions" && (
           <>
             {filteredSubmitted.length === 0 && (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIcon}>
-                  <Ionicons name="checkmark-circle-outline" size={32} color="#9CA3AF" />
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={32}
+                    color="#9CA3AF"
+                  />
                 </View>
                 <Text style={styles.emptyTitle}>No submissions yet</Text>
-                <Text style={styles.emptySub}>Students have not submitted this homework</Text>
+                <Text style={styles.emptySub}>
+                  Students have not submitted this homework
+                </Text>
               </View>
             )}
             {filteredSubmitted.map((entry, index) => {
@@ -453,25 +590,49 @@ export default function AdminHomeworkDetailScreen() {
                   onPress={() => setStudentDetail(entry)}
                 >
                   <View style={[styles.avatar, { backgroundColor: av.bg }]}>
-                    <Text style={[styles.avatarText, { color: av.color }]}>{getInitials(entry.name)}</Text>
+                    <Text style={[styles.avatarText, { color: av.color }]}>
+                      {getInitials(entry.name)}
+                    </Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={styles.subTopRow}>
                       <Text style={styles.subName}>{entry.name}</Text>
-                      <View style={[styles.timePill, { backgroundColor: timing.bg }]}>
-                        <Text style={[styles.timeText, { color: timing.color }]}>{timing.label}</Text>
+                      <View
+                        style={[
+                          styles.timePill,
+                          { backgroundColor: timing.bg },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.timeText, { color: timing.color }]}
+                        >
+                          {timing.label}
+                        </Text>
                       </View>
                     </View>
                     <View style={styles.subMetaRow}>
-                      <Ionicons name="images-outline" size={12} color="#9CA3AF" />
-                      <Text style={styles.subMeta}> {entry.tasks.length} photo{entry.tasks.length !== 1 ? "s" : ""}</Text>
+                      <Ionicons
+                        name="images-outline"
+                        size={12}
+                        color="#9CA3AF"
+                      />
+                      <Text style={styles.subMeta}>
+                        {" "}
+                        {entry.tasks.length} photo
+                        {entry.tasks.length !== 1 ? "s" : ""}
+                      </Text>
                       <Text style={styles.subMetaDot}>·</Text>
                       <Ionicons name="time-outline" size={12} color="#9CA3AF" />
-                      <Text style={styles.subMeta}> {formatSubmitDate(entry.submitDate ?? "")}</Text>
+                      <Text style={styles.subMeta}>
+                        {" "}
+                        {formatSubmitDate(entry.submitDate ?? "")}
+                      </Text>
                     </View>
                     <View style={styles.viewRow}>
                       <Ionicons name="eye-outline" size={13} color={sc.color} />
-                      <Text style={[styles.viewText, { color: sc.color }]}>Tap to view & preview images</Text>
+                      <Text style={[styles.viewText, { color: sc.color }]}>
+                        Tap to view & preview images
+                      </Text>
                     </View>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
@@ -486,34 +647,66 @@ export default function AdminHomeworkDetailScreen() {
           <>
             {pendingList.length === 0 ? (
               <View style={styles.emptyState}>
-                <View style={[styles.emptyIcon, { backgroundColor: "#DCFCE7" }]}>
-                  <Ionicons name="checkmark-circle-outline" size={32} color="#16A34A" />
+                <View
+                  style={[styles.emptyIcon, { backgroundColor: "#DCFCE7" }]}
+                >
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={32}
+                    color="#16A34A"
+                  />
                 </View>
                 <Text style={styles.emptyTitle}>All submitted!</Text>
-                <Text style={styles.emptySub}>Every student has submitted this homework</Text>
+                <Text style={styles.emptySub}>
+                  Every student has submitted this homework
+                </Text>
               </View>
             ) : (
               <>
                 <View style={styles.pendingNotice}>
-                  <Ionicons name="alert-circle-outline" size={16} color="#EA580C" />
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={16}
+                    color="#EA580C"
+                  />
                   <Text style={styles.pendingNoticeText}>
-                    {pendingList.length} student{pendingList.length !== 1 ? "s have" : " has"} not submitted yet
+                    {pendingList.length} student
+                    {pendingList.length !== 1 ? "s have" : " has"} not submitted
+                    yet
                   </Text>
                 </View>
                 {filteredPending.map((entry, index) => {
                   const av = AVATAR_PALETTE[index % AVATAR_PALETTE.length];
                   return (
                     <View key={entry.studentId} style={styles.pendingCard}>
-                      <View style={[styles.pendingAvatar, { backgroundColor: av.bg }]}>
-                        <Text style={[styles.pendingAvatarText, { color: av.color }]}>{getInitials(entry.name)}</Text>
+                      <View
+                        style={[
+                          styles.pendingAvatar,
+                          { backgroundColor: av.bg },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.pendingAvatarText,
+                            { color: av.color },
+                          ]}
+                        >
+                          {getInitials(entry.name)}
+                        </Text>
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.pendingName}>{entry.name}</Text>
                         <Text style={styles.pendingClass}>{hwInfo.class}</Text>
                       </View>
                       <View style={styles.notSubmittedPill}>
-                        <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
-                        <Text style={styles.notSubmittedText}>Not submitted</Text>
+                        <Ionicons
+                          name="close-circle-outline"
+                          size={14}
+                          color="#DC2626"
+                        />
+                        <Text style={styles.notSubmittedText}>
+                          Not submitted
+                        </Text>
                       </View>
                     </View>
                   );
@@ -527,55 +720,110 @@ export default function AdminHomeworkDetailScreen() {
       </ScrollView>
 
       {/* PER-STUDENT IMAGE GALLERY */}
-      <Modal visible={!!studentDetail} animationType="slide" onRequestClose={() => setStudentDetail(null)}>
+      <Modal
+        visible={!!studentDetail}
+        animationType="slide"
+        onRequestClose={() => setStudentDetail(null)}
+      >
         <SafeAreaView style={{ flex: 1, backgroundColor: "#F5F7FB" }}>
-          <View style={[gallery.header, { backgroundColor: sc.color, paddingTop: insets.top + 8 }]}>
-            <TouchableOpacity style={gallery.backBtn} onPress={() => setStudentDetail(null)}>
+          <View
+            style={[
+              gallery.header,
+              { backgroundColor: sc.color, paddingTop: insets.top + 8 },
+            ]}
+          >
+            <TouchableOpacity
+              style={gallery.backBtn}
+              onPress={() => setStudentDetail(null)}
+            >
               <Ionicons name="chevron-back" size={22} color="#fff" />
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={gallery.headerTitle}>{studentDetail?.name}</Text>
               <Text style={gallery.headerSub}>
-                {studentDetail?.tasks.length} submission{(studentDetail?.tasks.length ?? 0) !== 1 ? "s" : ""}
-                {studentDetail ? `  ·  ${studentDetail.onTime ? "On time" : "Late"}` : ""}
+                {studentDetail?.tasks.length} submission
+                {(studentDetail?.tasks.length ?? 0) !== 1 ? "s" : ""}
+                {studentDetail
+                  ? `  ·  ${studentDetail.onTime ? "On time" : "Late"}`
+                  : ""}
               </Text>
             </View>
           </View>
 
-          <ScrollView contentContainerStyle={gallery.scroll} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            contentContainerStyle={gallery.scroll}
+            showsVerticalScrollIndicator={false}
+          >
             {studentDetail?.tasks.map((t, idx) => {
               const url = resolveTaskUrl(t.task);
-              const late = hwInfo.endDateRaw && t.submitDate
-                ? new Date(t.submitDate).getTime() > new Date(hwInfo.endDateRaw).getTime()
-                : false;
+              const late =
+                hwInfo.endDateRaw && t.submitDate
+                  ? new Date(t.submitDate).getTime() >
+                    new Date(hwInfo.endDateRaw).getTime()
+                  : false;
               return (
                 <View key={t.id} style={gallery.card}>
                   <View style={gallery.cardHead}>
-                    <View style={[gallery.indexCircle, { backgroundColor: sc.bg }]}>
-                      <Text style={[gallery.indexText, { color: sc.color }]}>{idx + 1}</Text>
+                    <View
+                      style={[gallery.indexCircle, { backgroundColor: sc.bg }]}
+                    >
+                      <Text style={[gallery.indexText, { color: sc.color }]}>
+                        {idx + 1}
+                      </Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={gallery.cardDate}>{formatSubmitDate(t.submitDate)}</Text>
+                      <Text style={gallery.cardDate}>
+                        {formatSubmitDate(t.submitDate)}
+                      </Text>
                       <Text style={gallery.cardSub}>Submission #{idx + 1}</Text>
                     </View>
-                    <View style={[gallery.cardBadge, { backgroundColor: late ? "#FEE2E2" : "#DCFCE7" }]}>
-                      <Text style={[gallery.cardBadgeText, { color: late ? "#DC2626" : "#16A34A" }]}>
+                    <View
+                      style={[
+                        gallery.cardBadge,
+                        { backgroundColor: late ? "#FEE2E2" : "#DCFCE7" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          gallery.cardBadgeText,
+                          { color: late ? "#DC2626" : "#16A34A" },
+                        ]}
+                      >
                         {late ? "Late" : "On time"}
                       </Text>
                     </View>
                   </View>
                   {url ? (
-                    <TouchableOpacity activeOpacity={0.9} onPress={() => openZoom(url, `${studentDetail?.name} · #${idx + 1}`)}>
-                      <Image source={{ uri: url }} style={gallery.image} resizeMode="cover" />
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() =>
+                        openZoom(url, `${studentDetail?.name} · #${idx + 1}`)
+                      }
+                    >
+                      <Image
+                        source={{ uri: url }}
+                        style={gallery.image}
+                        resizeMode="cover"
+                      />
                       <View style={gallery.zoomHint}>
-                        <Ionicons name="expand-outline" size={14} color="#fff" />
+                        <Ionicons
+                          name="expand-outline"
+                          size={14}
+                          color="#fff"
+                        />
                         <Text style={gallery.zoomHintText}>Tap to zoom</Text>
                       </View>
                     </TouchableOpacity>
                   ) : (
                     <View style={gallery.imagePlaceholder}>
-                      <Ionicons name="image-outline" size={32} color="#D1D5DB" />
-                      <Text style={gallery.placeholderText}>Image unavailable</Text>
+                      <Ionicons
+                        name="image-outline"
+                        size={32}
+                        color="#D1D5DB"
+                      />
+                      <Text style={gallery.placeholderText}>
+                        Image unavailable
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -587,45 +835,96 @@ export default function AdminHomeworkDetailScreen() {
       </Modal>
 
       {/* ZOOM VIEWER */}
-      <Modal visible={imageViewerVisible} animationType="fade" transparent onRequestClose={() => setImageViewerVisible(false)}>
+      <Modal
+        visible={imageViewerVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setImageViewerVisible(false)}
+      >
         <View style={imageViewer.backdrop}>
           <View style={[imageViewer.topBar, { paddingTop: insets.top + 10 }]}>
-            <Text style={imageViewer.label} numberOfLines={1}>{imageViewerLabel}</Text>
-            <TouchableOpacity onPress={() => setImageViewerVisible(false)} style={imageViewer.closeBtn}>
+            <Text style={imageViewer.label} numberOfLines={1}>
+              {imageViewerLabel}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setImageViewerVisible(false)}
+              style={imageViewer.closeBtn}
+            >
               <Ionicons name="close" size={22} color="#fff" />
             </TouchableOpacity>
           </View>
           {imageViewerUrl ? (
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={imageViewer.scrollContent} maximumZoomScale={5} minimumZoomScale={1} centerContent showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-              <Image source={{ uri: imageViewerUrl }} style={imageViewer.image} resizeMode="contain" />
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={imageViewer.scrollContent}
+              maximumZoomScale={5}
+              minimumZoomScale={1}
+              centerContent
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+            >
+              <Image
+                source={{ uri: imageViewerUrl }}
+                style={imageViewer.image}
+                resizeMode="contain"
+              />
             </ScrollView>
           ) : (
-            <View style={imageViewer.scrollContent}><Text style={{ color: "#fff" }}>No image available</Text></View>
+            <View style={imageViewer.scrollContent}>
+              <Text style={{ color: "#fff" }}>No image available</Text>
+            </View>
           )}
           <Text style={imageViewer.hint}>Pinch to zoom · Drag to pan</Text>
         </View>
       </Modal>
 
       {/* HOMEWORK FILE PREVIEW */}
-      <Modal visible={previewVisible} animationType="slide" onRequestClose={() => setPreviewVisible(false)}>
+      <Modal
+        visible={previewVisible}
+        animationType="slide"
+        onRequestClose={() => setPreviewVisible(false)}
+      >
         <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
           <View style={styles.previewBar}>
-            <TouchableOpacity onPress={() => setPreviewVisible(false)} style={{ padding: 8 }}>
+            <TouchableOpacity
+              onPress={() => setPreviewVisible(false)}
+              style={{ padding: 8 }}
+            >
               <Ionicons name="close-outline" size={24} color="#111827" />
             </TouchableOpacity>
-            <Text style={styles.previewBarTitle} numberOfLines={1}>{hwInfo.title}</Text>
+            <Text style={styles.previewBarTitle} numberOfLines={1}>
+              {hwInfo.title}
+            </Text>
           </View>
           {previewUrl ? (
             <WebView
-              source={previewHeaders ? { uri: previewUrl, headers: previewHeaders } : { uri: previewUrl }}
+              source={
+                previewHeaders
+                  ? { uri: previewUrl, headers: previewHeaders }
+                  : { uri: previewUrl }
+              }
               style={{ flex: 1 }}
               startInLoadingState
-              renderLoading={() => (<ActivityIndicator style={{ flex: 1 }} size="large" color="#D97706" />)}
+              renderLoading={() => (
+                <ActivityIndicator
+                  style={{ flex: 1 }}
+                  size="large"
+                  color="#D97706"
+                />
+              )}
             />
           ) : (
-            <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+            <View
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
               <Ionicons name="document-outline" size={40} color="#D1D5DB" />
-              <Text style={{ color: "#9CA3AF", marginTop: 10 }}>No preview available</Text>
+              <Text style={{ color: "#9CA3AF", marginTop: 10 }}>
+                No preview available
+              </Text>
             </View>
           )}
         </SafeAreaView>
@@ -636,55 +935,196 @@ export default function AdminHomeworkDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F7FB" },
-  errorBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  errorBox: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
   errorText: { fontSize: 16, fontWeight: "700", color: "#374151" },
-  errorBtn: { backgroundColor: "#FEF3C7", borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10 },
+  errorBtn: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
   errorBtnText: { fontSize: 14, fontWeight: "600", color: "#D97706" },
 
   header: { paddingHorizontal: 20, paddingBottom: 16 },
-  headerTop: { flexDirection: "row", alignItems: "center", marginBottom: 14, gap: 10 },
-  backBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(255,255,255,0.18)", justifyContent: "center", alignItems: "center" },
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+    gap: 10,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   headerTitle: { fontSize: 17, fontWeight: "800", color: "#fff" },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: 1 },
-  statusBadge: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "rgba(255,255,255,0.2)" },
+  statusBadge: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
   statusBadgeText: { fontSize: 11, fontWeight: "700", color: "#fff" },
 
-  infoCard: { backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 12, padding: 12, marginBottom: 14, gap: 8 },
-  previewBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, alignSelf: "flex-start", marginTop: 4 },
+  infoCard: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    gap: 8,
+  },
+  previewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
   previewBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
-  previewBar: { height: 56, flexDirection: "row", alignItems: "center", paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: "#E5E7EB" },
-  previewBarTitle: { fontWeight: "700", marginLeft: 8, fontSize: 16, flex: 1, color: "#111827" },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  previewBar: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  previewBarTitle: {
+    fontWeight: "700",
+    marginLeft: 8,
+    fontSize: 16,
+    flex: 1,
+    color: "#111827",
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
   infoText: { fontSize: 12, color: "rgba(255,255,255,0.85)" },
   description: { fontSize: 13, color: "rgba(255,255,255,0.9)", lineHeight: 18 },
 
-  statsStrip: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 12, paddingVertical: 12, marginBottom: 12 },
+  statsStrip: {
+    flexDirection: "row",
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
   stripItem: { flex: 1, alignItems: "center" },
   stripNum: { fontSize: 18, fontWeight: "800", color: "#fff" },
   stripLabel: { fontSize: 10, color: "rgba(255,255,255,0.7)", marginTop: 2 },
-  stripDivider: { width: 1, backgroundColor: "rgba(255,255,255,0.25)", marginVertical: 4 },
+  stripDivider: {
+    width: 1,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    marginVertical: 4,
+  },
 
-  progressRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
-  progressLabel: { fontSize: 11, color: "rgba(255,255,255,0.8)", fontWeight: "500" },
-  progressBg: { height: 5, backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 3, overflow: "hidden" },
+  progressRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  progressLabel: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.8)",
+    fontWeight: "500",
+  },
+  progressBg: {
+    height: 5,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
   progressFill: { height: 5, backgroundColor: "#fff", borderRadius: 3 },
 
-  tabRow: { flexDirection: "row", marginHorizontal: 16, marginTop: 14, marginBottom: 4, backgroundColor: "#F3F4F6", borderRadius: 12, padding: 4 },
-  tab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 10 },
+  tabRow: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 4,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 4,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
   tabActive: { backgroundColor: "#fff" },
   tabLabel: { fontSize: 12, fontWeight: "600", color: "#9CA3AF" },
 
-  searchWrap: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", marginHorizontal: 16, marginTop: 10, marginBottom: 4, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1, borderColor: "#E5E7EB" },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
   searchInput: { flex: 1, fontSize: 14, color: "#111827" },
 
   scroll: { paddingHorizontal: 16, paddingTop: 8 },
 
-  submissionCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 14, marginBottom: 10, gap: 12 },
-  avatar: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+  submissionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: 14,
+    marginBottom: 10,
+    gap: 12,
+  },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
   avatarText: { fontSize: 14, fontWeight: "800" },
-  subTopRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 5 },
+  subTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 5,
+  },
   subName: { fontSize: 14, fontWeight: "700", color: "#111827", flex: 1 },
-  subMetaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4, flexWrap: "wrap" },
+  subMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 4,
+    flexWrap: "wrap",
+  },
   subMeta: { fontSize: 11, color: "#9CA3AF" },
   subMetaDot: { fontSize: 11, color: "#D1D5DB" },
   timePill: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
@@ -692,50 +1132,178 @@ const styles = StyleSheet.create({
   viewRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
   viewText: { fontSize: 11, fontWeight: "600" },
 
-  pendingNotice: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FFF7ED", borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: "#FED7AA" },
-  pendingNoticeText: { fontSize: 13, color: "#EA580C", fontWeight: "500", flex: 1 },
-  pendingCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 12, marginBottom: 8, gap: 10 },
-  pendingAvatar: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+  pendingNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FFF7ED",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+  },
+  pendingNoticeText: {
+    fontSize: 13,
+    color: "#EA580C",
+    fontWeight: "500",
+    flex: 1,
+  },
+  pendingCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 8,
+    gap: 10,
+  },
+  pendingAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
   pendingAvatarText: { fontSize: 13, fontWeight: "800" },
   pendingName: { fontSize: 13, fontWeight: "600", color: "#374151" },
   pendingClass: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
-  notSubmittedPill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FEE2E2", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  notSubmittedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FEE2E2",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
   notSubmittedText: { fontSize: 11, fontWeight: "600", color: "#DC2626" },
 
   emptyState: { alignItems: "center", paddingTop: 60 },
-  emptyIcon: { width: 70, height: 70, borderRadius: 35, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center", marginBottom: 14 },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: "#374151", marginBottom: 6 },
+  emptyIcon: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#374151",
+    marginBottom: 6,
+  },
   emptySub: { fontSize: 13, color: "#9CA3AF", textAlign: "center" },
 });
 
 const gallery = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 14, gap: 8 },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.18)", justifyContent: "center", alignItems: "center" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    gap: 8,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   headerTitle: { fontSize: 16, fontWeight: "800", color: "#fff" },
   headerSub: { fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 1 },
   scroll: { padding: 16 },
-  card: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", marginBottom: 14, overflow: "hidden" },
-  cardHead: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
-  indexCircle: { width: 30, height: 30, borderRadius: 15, justifyContent: "center", alignItems: "center" },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 14,
+    overflow: "hidden",
+  },
+  cardHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  indexCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   indexText: { fontSize: 13, fontWeight: "800" },
   cardDate: { fontSize: 13, fontWeight: "700", color: "#111827" },
   cardSub: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
   cardBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
   cardBadgeText: { fontSize: 10.5, fontWeight: "800" },
   image: { width: "100%", height: 280 },
-  zoomHint: { position: "absolute", bottom: 10, right: 10, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(0,0,0,0.55)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  zoomHint: {
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
   zoomHintText: { fontSize: 10, fontWeight: "700", color: "#fff" },
-  imagePlaceholder: { height: 180, alignItems: "center", justifyContent: "center", backgroundColor: "#F9FAFB", gap: 8 },
+  imagePlaceholder: {
+    height: 180,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+    gap: 8,
+  },
   placeholderText: { fontSize: 12, color: "#9CA3AF" },
 });
 
 const SCREEN = Dimensions.get("window");
 const imageViewer = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "#000" },
-  topBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 12, gap: 12, zIndex: 2 },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 12,
+    zIndex: 2,
+  },
   label: { flex: 1, color: "#fff", fontSize: 14, fontWeight: "700" },
-  closeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
-  scrollContent: { flexGrow: 1, justifyContent: "center", alignItems: "center" },
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   image: { width: SCREEN.width, height: SCREEN.height * 0.75 },
-  hint: { position: "absolute", bottom: 24, alignSelf: "center", color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "600" },
+  hint: {
+    position: "absolute",
+    bottom: 24,
+    alignSelf: "center",
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
 });
