@@ -128,11 +128,11 @@ export default function LoginScreen() {
             <View style={styles.logoBox}>
               <Ionicons name="school" size={18} color="#fff" />
             </View>
-            <Text style={styles.logoText}>OHPDS</Text>
+            <Text style={styles.logoText}>OHMDS</Text>
           </View>
 
           {/* Welcome text */}
-          <Text style={styles.welcomeTitle}>Welcome to OHPDS</Text>
+          <Text style={styles.welcomeTitle}>Welcome to OHMDS</Text>
           <Text style={styles.welcomeSub}>Sign in to your account</Text>
         </LinearGradient>
 

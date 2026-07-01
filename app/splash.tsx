@@ -32,10 +32,10 @@ export default function SplashScreen() {
       <Animated.Text
         style={[styles.logo, { opacity: fade, transform: [{ scale }] }]}
       >
-        OHPDS
+        OHMDS
       </Animated.Text>
 
-      <Text style={styles.sub}>Online Home Package Delivery System </Text>
+      <Text style={styles.sub}>Online Homework Management and Delivery System </Text>
     </View>
   );
 }

@@ -1,5 +1,7 @@
 
-Project stucture for OHPDS 
+Project stucture for OHMDS 
+
+new name is Online Homework Management and Delivery System ( OHMDS )
 
 ps for mail => School@2026
 

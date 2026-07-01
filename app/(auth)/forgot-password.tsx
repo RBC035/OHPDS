@@ -89,9 +89,7 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       await PasswordResetService.requestOtp({ phone: fullPhone });
-
-      // The backend always responds generically (it never reveals whether the
-      // number exists), so we always move forward to the OTP screen.
+      
       router.push({
         pathname: "/(auth)/otp-verification",
         params: { phone: fullPhone },
@@ -132,7 +130,7 @@ export default function ForgotPassword() {
             <Ionicons name="lock-closed" size={18} color="#fff" />
           </View>
 
-          <Text style={styles.logoText}>OHPDS</Text>
+          <Text style={styles.logoText}>OHMDS</Text>
         </View>
 
         {/* Title */}

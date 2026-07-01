@@ -323,10 +323,10 @@ export default function OnboardingScreen() {
           <View style={s.logoMark}>
             <Ionicons name="layers" size={17} color={C.white} />
           </View>
-          <Text style={s.logoText}>OHPDS</Text>
+          <Text style={s.logoText}>OHMDS</Text>
           <View style={{ flex: 1 }} />
           <View style={s.versionBadge}>
-            <Text style={s.versionText}>v2.0</Text>
+            <Text style={s.versionText}>v1.0</Text>
           </View>
         </Animated.View>
 

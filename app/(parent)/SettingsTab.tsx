@@ -113,8 +113,8 @@ export function SettingsTab() {
   };
 
   function parentId(id?: number | string) {
-    if (!id) return "OHPDS-PAR-0000";
-    return `OHPDS-PAR-${String(id).padStart(4, "0")}`;
+    if (!id) return "OHMDS-PAR-0000";
+    return `OHMDS-PAR-${String(id).padStart(4, "0")}`;
   }
 
   const initials = user?.name
@@ -316,17 +316,17 @@ export function SettingsTab() {
           </View>
         </View>
 
-        {/* ── ABOUT OHPDS ── */}
-        <Text style={styles.sectionLabel}>About OHPDS</Text>
+        {/* ── ABOUT OHMDS ── */}
+        <Text style={styles.sectionLabel}>About OHMDS</Text>
         <View style={styles.section}>
           <View style={styles.aboutHeader}>
             <View style={styles.appIconBox}>
               <Ionicons name="home-outline" size={26} color="#2563EB" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.appName}>OHPDS</Text>
+              <Text style={styles.appName}>OHMDS</Text>
               <Text style={styles.appFullName}>
-                Online Home Package Delivery System
+                Online Homework Management and Delivery System
               </Text>
             </View>
             <View style={styles.versionBadge}>
@@ -338,7 +338,7 @@ export function SettingsTab() {
 
           <View style={styles.descBlock}>
             <Text style={styles.descText}>
-              OHPDS is a mobile platform that connects teachers, students, and
+              OHMDS is a mobile platform that connects teachers, students, and
               parents in one place.
             </Text>
             <Text style={[styles.descText, { marginTop: 8 }]}>
@@ -390,7 +390,7 @@ export function SettingsTab() {
           <Text style={styles.logoutText}>Log out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.footerText}>OHPDS v1.0 · © 2025 Mulsol Group</Text>
+        <Text style={styles.footerText}>OHMDS v1.0 · © 2025 </Text>
         <View style={{ height: 100 }} />
       </View>
 

@@ -140,7 +140,7 @@ export default function AdminDashboard() {
           <View style={{ flex: 1 }}>
             <Text style={styles.greeting}>{greeting()}</Text>
             <Text style={styles.adminName}>Admin</Text>
-            <Text style={styles.adminSub}>OHPDS School Management</Text>
+            <Text style={styles.adminSub}>OHMDS School Management</Text>
           </View>
           <View style={styles.avatarCircle}>
             <Text style={styles.avatarText}>AD</Text>

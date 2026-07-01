@@ -121,8 +121,8 @@ export default function SettingsScreen() {
   };
 
   function staffId(id?: number | string) {
-    if (!id) return "OHPDS-TCH-0000";
-    return `OHPDS-TCH-${String(id).padStart(4, "0")}`;
+    if (!id) return "OHMDS-TCH-0000";
+    return `OHMDS-TCH-${String(id).padStart(4, "0")}`;
   }
 
   async function handleLogout() {
@@ -320,17 +320,17 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* ── ABOUT OHPDS ── */}
-          <Text style={styles.sectionLabel}>About OHPDS</Text>
+          {/* ── ABOUT OHMDS ── */}
+          <Text style={styles.sectionLabel}>About OHMDS</Text>
           <View style={styles.section}>
             <View style={styles.aboutHeader}>
               <View style={styles.appIconBox}>
                 <Ionicons name="home-outline" size={26} color="#2563EB" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.appName}>OHPDS</Text>
+                <Text style={styles.appName}>OHMDS</Text>
                 <Text style={styles.appFullName}>
-                  Online Home Package Delivery System
+                  Online Homework Management and Delivery System
                 </Text>
               </View>
               <View style={styles.versionBadge}>
@@ -342,7 +342,7 @@ export default function SettingsScreen() {
 
             <View style={styles.descBlock}>
               <Text style={styles.descText}>
-                OHPDS is a mobile platform that connects teachers, students, and
+                OHMDS is a mobile platform that connects teachers, students, and
                 parents in one place.
               </Text>
               <Text style={[styles.descText, { marginTop: 8 }]}>
@@ -400,7 +400,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
 
           <Text style={styles.footerText}>
-            OHPDS v1.0 · © 2025 Mulsol Group
+            OHMDS v1.0 · © 2025 
           </Text>
 
           <View style={{ height: 24 }} />

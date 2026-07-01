@@ -496,7 +496,7 @@ export default function AdminSettings() {
           </View>
           <Text style={styles.profileName}>Administrator</Text>
           <Text style={styles.profileRole}>
-            {adminUsername || "OHPDS School Management System"}
+            {adminUsername || "OHMDS School Management System"}
           </Text>
           <View style={styles.profileTag}>
             <Ionicons name="shield-checkmark-outline" size={11} color="#fff" />
@@ -588,17 +588,17 @@ export default function AdminSettings() {
             </TouchableOpacity>
           </View>
 
-          {/* ── ABOUT OHPDS ── */}
-          <Text style={styles.sectionLabel}>About OHPDS</Text>
+          {/* ── ABOUT OHMDS ── */}
+          <Text style={styles.sectionLabel}>About OHMDS</Text>
           <View style={styles.section}>
             <View style={styles.aboutHeader}>
               <View style={styles.appIconBox}>
                 <Ionicons name="home-outline" size={26} color="#2563EB" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.appName}>OHPDS</Text>
+                <Text style={styles.appName}>OHMDS</Text>
                 <Text style={styles.appFullName}>
-                  Online Home Package Delivery System
+                  Online Homework Management and Delivery System
                 </Text>
               </View>
               <View style={styles.versionBadge}>
@@ -610,7 +610,7 @@ export default function AdminSettings() {
 
             <View style={styles.descBlock}>
               <Text style={styles.descText}>
-                OHPDS is a mobile platform that connects teachers, students, and
+                OHMDS is a mobile platform that connects teachers, students, and
                 parents in one place.
               </Text>
               <Text style={[styles.descText, { marginTop: 8 }]}>
@@ -668,8 +668,12 @@ export default function AdminSettings() {
           </TouchableOpacity>
 
           <Text style={styles.footerText}>
-            OHPDS v1.0 · © 2025 Mulsol Group
+            OHMDS v1.0 · © 2025
           </Text>
+{/* 
+            <Text style={styles.footerText}>
+            OHMDS v1.0 · © 2025 Mulsol Group
+          </Text> */}
 
           <View style={{ height: 24 }} />
         </View>
